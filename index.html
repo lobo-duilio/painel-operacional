@@ -627,7 +627,7 @@
       <span class="meta" id="userInfo" style="margin-right:6px;"></span>
       <button class="btn" onclick="doLogout()">Sair</button>
       <button class="btn" id="usersBtn" onclick="openUserPanel()">Gerenciar usuários</button>
-      <button class="btn" onclick="configureSheets()">Configurar Google Sheets</button>
+      <button class="btn" id="sheetsBtn" onclick="configureSheets()">Configurar Google Sheets</button>
       <button class="btn" id="resetBtn" onclick="resetData()">Restaurar dados originais</button>
     </div>
   </div>
@@ -794,6 +794,11 @@ async function testAppsScriptConnection(url){
 }
 
 async function configureSheets(){
+  if(APPS_SCRIPT_URL && (!SESSION || SESSION.papel !== 'adm')){
+    alert("Somente administradores podem alterar a conexão com o Google Sheets.");
+    return;
+  }
+
   const current = APPS_SCRIPT_URL || '';
   const url = prompt(
     "Cole aqui a URL do seu Google Apps Script (termina em /exec).\n\nDeixe em branco e confirme para desligar a sincronização e voltar a salvar apenas dentro do Claude.",
@@ -904,6 +909,8 @@ function applyRolePermissions(){
   if(resetBtn) resetBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
   const usersBtn = document.getElementById('usersBtn');
   if(usersBtn) usersBtn.style.display = (APPS_SCRIPT_URL && isAdmin) ? '' : 'none';
+  const sheetsBtn = document.getElementById('sheetsBtn');
+  if(sheetsBtn) sheetsBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
 }
 
 async function doLogin(){
