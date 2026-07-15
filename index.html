@@ -110,6 +110,11 @@
     color:var(--navy);
     border-bottom:3px solid var(--steel);
   }
+  #nav-add-tab{
+    color:var(--steel);
+    margin-left:auto;
+  }
+  #nav-add-tab:hover{color:var(--navy);}
 
   .view{display:none;}
   .view.active{display:block;}
@@ -672,6 +677,28 @@
   </div>
 </div>
 
+<div id="newTabModal" class="modal-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeNewTabModal()">&times;</button>
+    <h2>Nova aba</h2>
+    <p class="modal-sub">Cria uma aba própria com uma tabela de registros, igual às de Roedores/Aves. Cada aba vira uma planilha nova, sincronizada automaticamente.</p>
+
+    <div class="modal-form-grid">
+      <div class="full">
+        <label>Nome da aba</label>
+        <input type="text" id="newTabNome" placeholder="ex: Controle de Insumos">
+      </div>
+      <div class="full">
+        <label>Campos da tabela (separados por vírgula)</label>
+        <input type="text" id="newTabCampos" placeholder="ex: Data, Item, Quantidade, Responsável, Observação">
+      </div>
+    </div>
+    <p class="modal-sub" style="margin:0 0 10px;">Dica: um campo chamado exatamente "Data" vira um seletor de data, e cria eventos na Agenda automaticamente. Campos com "quantidade", "peso" ou "valor" no nome viram numéricos; os demais viram texto.</p>
+    <p class="modal-error" id="newTabError"></p>
+    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="submitNewTab()">Criar aba</button>
+  </div>
+</div>
+
 <div class="wrap" id="appRoot" style="display:none;">
 
   <div class="topbar">
@@ -690,10 +717,11 @@
     </div>
   </div>
 
-  <div class="mainnav">
-    <button id="nav-geral" class="active" onclick="showView('geral')">Painel geral</button>
+  <div class="mainnav" id="mainnav">
+    <button id="nav-geral" class="active" onclick="showView('geral')">Operacional</button>
     <button id="nav-roedores" onclick="showView('roedores')">Criação de roedores</button>
     <button id="nav-aves" onclick="showView('aves')">Treinamento de aves</button>
+    <button id="nav-add-tab" onclick="openNewTabModal()">+ Nova aba</button>
   </div>
 
   <!-- VIEW: PAINEL GERAL -->
@@ -972,6 +1000,8 @@ function applyRolePermissions(){
   if(usersBtn) usersBtn.style.display = (APPS_SCRIPT_URL && isAdmin) ? '' : 'none';
   const sheetsBtn = document.getElementById('sheetsBtn');
   if(sheetsBtn) sheetsBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
+  const addTabBtn = document.getElementById('nav-add-tab');
+  if(addTabBtn) addTabBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
 }
 
 async function doLogin(){
@@ -1364,6 +1394,120 @@ async function submitNewActivity(){
   closeNewActivityModal();
   activeFilter = 'Todas';
   renderGeral();
+}
+
+/* ---- Abas personalizadas (criadas pelo botão "+ Nova aba") ---- */
+
+let customTabsRegistry = [];
+
+function slugify(text){
+  return String(text).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'_')
+    .replace(/^_+|_+$/g,'') || 'campo';
+}
+
+function buildColumnDef(label){
+  const norm = slugify(label);
+  let type = 'text';
+  if(norm === 'data') type = 'date';
+  else if(/quantidade|peso|valor|numero|preco|idade|qtd/.test(norm)) type = 'number';
+  return { key: norm, label: label, type: type };
+}
+
+async function loadTabsRegistry(){
+  try{
+    const res = await storageGet('abas-personalizadas');
+    customTabsRegistry = JSON.parse(res.value);
+  }catch(e){
+    customTabsRegistry = [];
+  }
+}
+
+async function saveTabsRegistry(){
+  await storageSet('abas-personalizadas', JSON.stringify(customTabsRegistry));
+}
+
+function openNewTabModal(){
+  document.getElementById('newTabError').textContent = '';
+  document.getElementById('newTabNome').value = '';
+  document.getElementById('newTabCampos').value = '';
+  document.getElementById('newTabModal').classList.add('active');
+}
+
+function closeNewTabModal(){
+  document.getElementById('newTabModal').classList.remove('active');
+}
+
+async function submitNewTab(){
+  const errEl = document.getElementById('newTabError');
+  errEl.textContent = '';
+
+  const nome = document.getElementById('newTabNome').value.trim();
+  const camposRaw = document.getElementById('newTabCampos').value.trim();
+  if(!nome || !camposRaw){
+    errEl.textContent = 'Preencha o nome da aba e ao menos um campo.';
+    return;
+  }
+  const campos = camposRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  if(campos.length === 0){
+    errEl.textContent = 'Informe ao menos um campo, separado por vírgula.';
+    return;
+  }
+
+  const cols = campos.map(buildColumnDef);
+  const key = 'custom-' + Date.now();
+  const tabDef = { key: key, label: nome, columns: JSON.stringify(cols) };
+
+  customTabsRegistry.push(tabDef);
+  try{
+    await saveTabsRegistry();
+  }catch(e){
+    customTabsRegistry.pop();
+    errEl.textContent = 'Erro ao salvar: ' + (e.message || e);
+    return;
+  }
+
+  mountCustomTab(tabDef);
+  logData[key] = [];
+  renderLogTable(key);
+  closeNewTabModal();
+  showView(key);
+}
+
+/** Cria os elementos de navegação e tabela de uma aba personalizada, e a registra em LOG_CONFIGS. */
+function mountCustomTab(tabDef){
+  if(LOG_CONFIGS[tabDef.key]) return;
+
+  const cols = typeof tabDef.columns === 'string' ? JSON.parse(tabDef.columns) : tabDef.columns;
+  LOG_CONFIGS[tabDef.key] = { container: 'sub-' + tabDef.key, cols: cols };
+
+  const nav = document.getElementById('mainnav');
+  const addBtn = document.getElementById('nav-add-tab');
+  const btn = document.createElement('button');
+  btn.id = 'nav-' + tabDef.key;
+  btn.textContent = tabDef.label;
+  btn.onclick = function(){ showView(tabDef.key); };
+  nav.insertBefore(btn, addBtn);
+
+  const wrap = document.querySelector('.wrap');
+  const view = document.createElement('div');
+  view.className = 'view';
+  view.id = 'view-' + tabDef.key;
+  view.innerHTML =
+    '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
+    '<p>Aba personalizada</p></div></div>' +
+    '<div id="sub-' + tabDef.key + '"></div>';
+  wrap.appendChild(view);
+}
+
+async function loadAndMountCustomTabs(){
+  await loadTabsRegistry();
+  for(const tabDef of customTabsRegistry){
+    mountCustomTab(tabDef);
+    await loadLogData(tabDef.key);
+    renderLogTable(tabDef.key);
+  }
 }
 
 function renderCards(){
@@ -1800,6 +1944,7 @@ async function init(skipUrlReload){
       await loadLogData(key);
     }
     renderAllLogs();
+    await loadAndMountCustomTabs();
     return;
   }
 
@@ -1821,6 +1966,7 @@ async function init(skipUrlReload){
     await loadLogData(key);
   }
   renderAllLogs();
+  await loadAndMountCustomTabs();
 }
 
 init();
