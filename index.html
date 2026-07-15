@@ -1002,6 +1002,8 @@ function applyRolePermissions(){
   if(sheetsBtn) sheetsBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
   const addTabBtn = document.getElementById('nav-add-tab');
   if(addTabBtn) addTabBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
+  const newActivityBtn = document.getElementById('newActivityBtn');
+  if(newActivityBtn) newActivityBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
 }
 
 async function doLogin(){
@@ -1364,6 +1366,11 @@ async function submitNewActivity(){
   const errEl = document.getElementById('newActError');
   errEl.textContent = '';
 
+  if(APPS_SCRIPT_URL && (!SESSION || SESSION.papel !== 'adm')){
+    errEl.textContent = 'Somente administradores podem criar novas atividades.';
+    return;
+  }
+
   const area = document.getElementById('newActArea').value.trim();
   const title = document.getElementById('newActTitle').value.trim();
   const responsavel = document.getElementById('newActResponsavel').value.trim();
@@ -1490,15 +1497,47 @@ function mountCustomTab(tabDef){
   btn.onclick = function(){ showView(tabDef.key); };
   nav.insertBefore(btn, addBtn);
 
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const canDeleteTab = !APPS_SCRIPT_URL || isAdmin;
+  const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const deleteTabBtn = canDeleteTab
+    ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
+    : '';
+
   const wrap = document.querySelector('.wrap');
   const view = document.createElement('div');
   view.className = 'view';
   view.id = 'view-' + tabDef.key;
   view.innerHTML =
     '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
-    '<p>Aba personalizada</p></div></div>' +
+    '<p>Aba personalizada</p></div>' + deleteTabBtn + '</div>' +
     '<div id="sub-' + tabDef.key + '"></div>';
   wrap.appendChild(view);
+}
+
+async function deleteCustomTab(tabKey, label){
+  if(!confirm('Excluir a aba "' + label + '"? Isso remove a aba do dashboard e apaga a planilha de dados associada. Não pode ser desfeito.')) return;
+
+  if(APPS_SCRIPT_URL){
+    try{
+      await userApiCall('deleteCustomTab', { tabKey: tabKey });
+    }catch(e){
+      if(String(e.message) === 'AUTH_EXPIRED') return;
+      alert('Não foi possível excluir a aba: ' + (e.message || e));
+      return;
+    }
+  }
+
+  customTabsRegistry = customTabsRegistry.filter(t => t.key !== tabKey);
+  delete LOG_CONFIGS[tabKey];
+  delete logData[tabKey];
+
+  const navBtn = document.getElementById('nav-' + tabKey);
+  if(navBtn) navBtn.remove();
+  const viewEl = document.getElementById('view-' + tabKey);
+  if(viewEl) viewEl.remove();
+
+  showView('geral');
 }
 
 async function loadAndMountCustomTabs(){
@@ -1513,6 +1552,7 @@ async function loadAndMountCustomTabs(){
 function renderCards(){
   const el = document.getElementById('cards');
   const items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
+  const canDeleteActivity = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
   el.innerHTML = items.map(item=>{
     const stageIdx = STAGES.indexOf(item.status);
     const color = STAGE_COLOR[item.status];
@@ -1521,6 +1561,9 @@ function renderCards(){
       const isLast = i===stageIdx;
       return `<div class="seg ${on?'on':''}" style="--stage-color:${color}">${isLast?'<div class="dot" style="--stage-color:'+color+'"></div>':''}</div>`;
     }).join('');
+    const deleteBtn = canDeleteActivity
+      ? `<button class="rowdel" style="margin-top:6px;" onclick="deleteActivity(${item.id})">Remover atividade</button>`
+      : '';
     return `
       <div class="card">
         <div class="card-top">
@@ -1531,9 +1574,12 @@ function renderCards(){
             </div>
             <div class="card-sub">Responsável: ${item.responsavel}</div>
           </div>
-          <select class="status-select" onchange="updateStatus(${item.id}, this.value)" style="color:${color};border-color:${color}55">
-            ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
-          </select>
+          <div style="text-align:right;">
+            <select class="status-select" onchange="updateStatus(${item.id}, this.value)" style="color:${color};border-color:${color}55">
+              ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
+            </select>
+            ${deleteBtn}
+          </div>
         </div>
 
         <div class="track">${segs}</div>
@@ -1568,6 +1614,15 @@ function updateStatus(id, value){
   const item = data.find(d=>d.id===id);
   item.status = value;
   save();
+  renderGeral();
+}
+
+async function deleteActivity(id){
+  const item = data.find(d=>d.id===id);
+  if(!item) return;
+  if(!confirm('Remover a atividade "' + item.title + '"? Essa ação não pode ser desfeita.')) return;
+  data = data.filter(d=>d.id!==id);
+  await save();
   renderGeral();
 }
 
