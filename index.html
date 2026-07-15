@@ -136,6 +136,22 @@
   .stat.s-atraso .num{color:var(--red);}
   .stat.s-concl .num{color:var(--sage);}
 
+  .filters-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  .filters-row .filters{margin-bottom:0;flex:1;}
+  #newActivityBtn{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+    white-space:nowrap;
+  }
+  #newActivityBtn:hover{background:var(--navy-2);}
   .filters{
     display:flex;
     gap:8px;
@@ -614,6 +630,48 @@
   </div>
 </div>
 
+<div id="newActivityModal" class="modal-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeNewActivityModal()">&times;</button>
+    <h2>Nova atividade</h2>
+    <p class="modal-sub">Adiciona um item novo ao Painel Geral. Preencha ao menos a área e o título.</p>
+
+    <div class="modal-form-grid">
+      <div>
+        <label>Área</label>
+        <input type="text" id="newActArea" list="areaOptions" placeholder="ex: Comunicação">
+        <datalist id="areaOptions"></datalist>
+      </div>
+      <div>
+        <label>Responsável</label>
+        <input type="text" id="newActResponsavel" placeholder="Nome da pessoa">
+      </div>
+      <div class="full">
+        <label>Título da atividade</label>
+        <input type="text" id="newActTitle" placeholder="ex: Revisar contratos de fornecedores">
+      </div>
+      <div class="full">
+        <label>Próxima ação</label>
+        <input type="text" id="newActNext" placeholder="ex: Levantar contratos vencendo este mês">
+      </div>
+      <div>
+        <label>Prazo</label>
+        <input type="date" id="newActPrazo">
+      </div>
+      <div>
+        <label>E-mails dos convidados (Agenda)</label>
+        <input type="text" id="newActEmails" placeholder="separados por vírgula">
+      </div>
+      <div class="full">
+        <label>Indicador chave</label>
+        <input type="text" id="newActIndicador" placeholder="ex: % de contratos revisados no prazo">
+      </div>
+    </div>
+    <p class="modal-error" id="newActError"></p>
+    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="submitNewActivity()">Adicionar atividade</button>
+  </div>
+</div>
+
 <div class="wrap" id="appRoot" style="display:none;">
 
   <div class="topbar">
@@ -641,7 +699,10 @@
   <!-- VIEW: PAINEL GERAL -->
   <div class="view active" id="view-geral">
     <div class="stats" id="stats"></div>
-    <div class="filters" id="filters"></div>
+    <div class="filters-row">
+      <div class="filters" id="filters"></div>
+      <button class="btn" id="newActivityBtn" onclick="openNewActivityModal()">+ Nova atividade</button>
+    </div>
     <div class="cards" id="cards"></div>
   </div>
 
@@ -1233,15 +1294,75 @@ function renderStats(){
 }
 
 function renderFilters(){
-  const areas = ["Todas", ...Array.from(new Set(data.map(d=>d.area)))];
+  const uniqueAreas = Array.from(new Set(data.map(d=>d.area)));
+  const areas = ["Todas", ...uniqueAreas];
   const el = document.getElementById('filters');
   el.innerHTML = areas.map(a=>
     `<button class="chip ${a===activeFilter?'active':''}" onclick="setFilter('${a}')">${a}</button>`
   ).join('');
+
+  const datalist = document.getElementById('areaOptions');
+  if(datalist){
+    datalist.innerHTML = uniqueAreas.map(a => `<option value="${a}"></option>`).join('');
+  }
 }
 
 function setFilter(a){
   activeFilter = a;
+  renderGeral();
+}
+
+/* ---- Nova atividade (Painel Geral) ---- */
+
+function openNewActivityModal(){
+  document.getElementById('newActError').textContent = '';
+  document.getElementById('newActArea').value = '';
+  document.getElementById('newActResponsavel').value = '';
+  document.getElementById('newActTitle').value = '';
+  document.getElementById('newActNext').value = '';
+  document.getElementById('newActPrazo').value = '';
+  document.getElementById('newActEmails').value = '';
+  document.getElementById('newActIndicador').value = '';
+  document.getElementById('newActivityModal').classList.add('active');
+}
+
+function closeNewActivityModal(){
+  document.getElementById('newActivityModal').classList.remove('active');
+}
+
+async function submitNewActivity(){
+  const errEl = document.getElementById('newActError');
+  errEl.textContent = '';
+
+  const area = document.getElementById('newActArea').value.trim();
+  const title = document.getElementById('newActTitle').value.trim();
+  const responsavel = document.getElementById('newActResponsavel').value.trim();
+  const next = document.getElementById('newActNext').value.trim();
+  const prazo = document.getElementById('newActPrazo').value;
+  const emails = document.getElementById('newActEmails').value.trim();
+  const indicador = document.getElementById('newActIndicador').value.trim();
+
+  if(!area || !title){
+    errEl.textContent = 'Preencha ao menos a área e o título da atividade.';
+    return;
+  }
+
+  const newItem = {
+    id: Date.now(),
+    area: area,
+    title: title,
+    status: 'Não iniciado',
+    next: next,
+    responsavel: responsavel || (SESSION ? SESSION.nome : ''),
+    prazo: prazo,
+    indicador: indicador,
+    emails: emails
+  };
+
+  data.push(newItem);
+  await save();
+  closeNewActivityModal();
+  activeFilter = 'Todas';
   renderGeral();
 }
 
