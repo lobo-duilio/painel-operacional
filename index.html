@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel Operacional — Duílio</title>
+<style>
+  :root{
+    --navy:#122238;
+    --navy-2:#1B3554;
+    --steel:#2E6DA4;
+    --steel-light:#DCE9F5;
+    --amber:#C97A2B;
+    --amber-light:#F7E6CF;
+    --sage:#3E8760;
+    --sage-light:#DCEEE2;
+    --gray:#8A8F98;
+    --gray-light:#E7E7E4;
+    --red:#B24A3C;
+    --red-light:#F5DEDA;
+    --bg:#F3F2ED;
+    --panel:#FFFFFF;
+    --ink:#1B2430;
+    --ink-soft:#5B6472;
+    --line:#E1DFD7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 60px;}
+
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    border-radius:14px;
+    padding:26px 30px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    margin-bottom:14px;
+  }
+  .topbar .eyebrow{
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:#9FB6CE;
+    margin:0 0 6px;
+    font-weight:600;
+  }
+  .topbar h1{
+    margin:0;
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .topbar .meta{
+    font-size:12.5px;
+    color:#9FB6CE;
+    margin-top:6px;
+  }
+  .topbar .actions{display:flex;gap:8px;align-items:center;}
+  .btn{
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.25);
+    color:#fff;
+    padding:9px 14px;
+    border-radius:8px;
+    font-size:12.5px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .btn:hover{background:rgba(255,255,255,.16);}
+  .btn.small{padding:6px 10px;font-size:11.5px;}
+  .btn.danger{background:rgba(178,74,60,.18);border-color:rgba(178,74,60,.5);}
+
+  /* Main section nav */
+  .mainnav{
+    display:flex;
+    gap:8px;
+    margin-bottom:20px;
+    border-bottom:2px solid var(--line);
+    padding-bottom:0;
+  }
+  .mainnav button{
+    border:none;
+    background:transparent;
+    padding:12px 18px;
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    margin-bottom:-2px;
+  }
+  .mainnav button.active{
+    color:var(--navy);
+    border-bottom:3px solid var(--steel);
+  }
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:10px;
+    margin-bottom:22px;
+  }
+  .stat{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 16px;
+  }
+  .stat .num{font-size:26px;font-weight:700;line-height:1;}
+  .stat .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:6px;font-weight:600;}
+  .stat.total{background:var(--navy);color:#fff;}
+  .stat.total .lbl{color:#9FB6CE;}
+  .stat.s-nao .num{color:var(--gray);}
+  .stat.s-plan .num{color:var(--amber);}
+  .stat.s-exec .num{color:var(--steel);}
+  .stat.s-atraso .num{color:var(--red);}
+  .stat.s-concl .num{color:var(--sage);}
+
+  .filters{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  .chip{
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink-soft);
+    padding:7px 14px;
+    border-radius:20px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+  .cards{display:flex;flex-direction:column;gap:12px;}
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px 20px;
+  }
+  .card-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    margin-bottom:14px;
+  }
+  .card-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .area-tag{
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:5px;
+    background:var(--steel-light);
+    color:var(--navy-2);
+    white-space:nowrap;
+  }
+  .card-title{font-size:15.5px;font-weight:700;color:var(--ink);}
+  .card-sub{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+
+  .status-select{
+    font-size:12px;
+    font-weight:700;
+    border-radius:7px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    cursor:pointer;
+  }
+
+  .track{
+    display:flex;
+    align-items:center;
+    margin:14px 0 16px;
+  }
+  .seg{
+    flex:1;
+    height:6px;
+    background:var(--gray-light);
+    position:relative;
+  }
+  .seg:first-child{border-radius:6px 0 0 6px;}
+  .seg:last-child{border-radius:0 6px 6px 0;}
+  .seg + .seg{margin-left:3px;}
+  .seg.on{background:var(--stage-color,var(--steel));}
+  .dot{
+    position:absolute;top:-4px;right:-7px;
+    width:14px;height:14px;border-radius:50%;
+    background:var(--stage-color,var(--steel));
+    border:2px solid var(--panel);
+  }
+  .track-labels{
+    display:flex;
+    font-size:9.5px;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    font-weight:600;
+    margin-top:6px;
+  }
+  .track-labels span{flex:1;text-align:center;}
+
+  .card-grid{
+    display:grid;
+    grid-template-columns:1.6fr 1fr 1fr;
+    gap:16px;
+    margin-top:4px;
+  }
+  .field label{
+    display:block;
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .field textarea, .field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:8px 10px;
+    font-size:13px;
+    font-family:inherit;
+    color:var(--ink);
+    resize:none;
+    background:#FCFCFA;
+  }
+  .field textarea{height:44px;}
+  .field .indic{
+    font-size:13px;
+    color:var(--ink-soft);
+    padding-top:4px;
+  }
+  .field-emails{margin-top:12px;}
+  .field-emails label{
+    text-transform:none;
+    letter-spacing:0;
+    font-size:11.5px;
+    font-weight:600;
+  }
+
+  /* Sub-module: Roedores / Aves */
+  .module-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .module-header h2{
+    font-size:19px;
+    margin:0;
+    font-weight:700;
+  }
+  .module-header p{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:2px 0 0;
+  }
+  .subnav{
+    display:flex;
+    gap:6px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .subnav button{
+    border:1px solid var(--line);
+    background:var(--panel);
+    padding:8px 15px;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-radius:8px;
+  }
+  .subnav button.active{
+    background:var(--steel);
+    border-color:var(--steel);
+    color:#fff;
+  }
+  .subview{display:none;}
+  .subview.active{display:block;}
+
+  .logtable-wrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px 20px;
+    overflow-x:auto;
+  }
+  table.logtable{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.logtable th{
+    text-align:left;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    font-weight:700;
+    padding:8px 10px;
+    border-bottom:2px solid var(--line);
+    white-space:nowrap;
+  }
+  table.logtable td{
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+    vertical-align:middle;
+  }
+  table.logtable tr.addrow td{
+    background:#FBFAF6;
+    padding:10px;
+  }
+  table.logtable input, table.logtable textarea{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:6px 8px;
+    font-size:12.5px;
+    font-family:inherit;
+    background:#fff;
+  }
+  table.logtable textarea{resize:vertical;min-height:34px;}
+  .rowdel{
+    border:none;background:transparent;color:var(--red);cursor:pointer;font-size:12px;font-weight:700;
+  }
+  .empty-row td{
+    text-align:center;color:var(--ink-soft);font-size:12.5px;padding:18px;
+  }
+
+  .estoque-summary{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:10px;
+    margin-bottom:18px;
+  }
+
+  @media (max-width:820px){
+    .stats{grid-template-columns:repeat(3,1fr);}
+    .card-grid{grid-template-columns:1fr;}
+  }
+
+  .login-screen{
+    position:fixed;
+    inset:0;
+    background:var(--navy);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:1000;
+  }
+  .login-card{
+    background:var(--panel);
+    border-radius:14px;
+    padding:34px 30px;
+    width:100%;
+    max-width:360px;
+  }
+  .login-title{
+    font-size:22px;
+    font-weight:700;
+    margin:0 0 6px;
+  }
+  .login-sub{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:0 0 22px;
+  }
+  .login-field{margin-bottom:14px;}
+  .login-field label{
+    display:block;
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .login-field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:10px 12px;
+    font-size:14px;
+    font-family:inherit;
+    background:#FCFCFA;
+  }
+  .login-btn{
+    width:100%;
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+    justify-content:center;
+    margin-top:8px;
+    padding:11px;
+    font-size:13px;
+  }
+  .login-btn:hover{background:var(--navy-2);}
+  .login-error{
+    color:var(--red);
+    font-size:12.5px;
+    margin:12px 0 0;
+    min-height:16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen" style="display:none;">
+  <div class="login-card">
+    <p class="eyebrow" style="color:var(--ink-soft);">Gerência Operacional</p>
+    <h1 class="login-title">Painel Operacional</h1>
+    <p class="login-sub">Entre com seu e-mail e senha para continuar.</p>
+    <div class="login-field">
+      <label>E-mail</label>
+      <input type="email" id="loginEmail" autocomplete="username" placeholder="voce@empresa.com">
+    </div>
+    <div class="login-field">
+      <label>Senha</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <button class="btn login-btn" onclick="doLogin()">Entrar</button>
+    <p class="login-error" id="loginError"></p>
+  </div>
+</div>
+
+<div class="wrap" id="appRoot" style="display:none;">
+
+  <div class="topbar">
+    <div>
+      <p class="eyebrow">Gerência Operacional</p>
+      <h1>Painel Operacional — Duílio</h1>
+      <p class="meta" id="lastUpdate">Carregando dados…</p>
+      <p class="meta" id="syncStatus">Verificando conexão com o Google Sheets…</p>
+    </div>
+    <div class="actions">
+      <span class="meta" id="userInfo" style="margin-right:6px;"></span>
+      <button class="btn" onclick="doLogout()">Sair</button>
+      <button class="btn" onclick="configureSheets()">Configurar Google Sheets</button>
+      <button class="btn" id="resetBtn" onclick="resetData()">Restaurar dados originais</button>
+    </div>
+  </div>
+
+  <div class="mainnav">
+    <button id="nav-geral" class="active" onclick="showView('geral')">Painel geral</button>
+    <button id="nav-roedores" onclick="showView('roedores')">Criação de roedores</button>
+    <button id="nav-aves" onclick="showView('aves')">Treinamento de aves</button>
+  </div>
+
+  <!-- VIEW: PAINEL GERAL -->
+  <div class="view active" id="view-geral">
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <!-- VIEW: CRIAÇÃO DE ROEDORES -->
+  <div class="view" id="view-roedores">
+    <div class="module-header">
+      <div>
+        <h2>Criação de roedores</h2>
+        <p>Controle de nascimento, abate, entrada, saída e estoque</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('roedores','nascimento')">Nascimento</button>
+      <button onclick="showSub('roedores','abate')">Abate</button>
+      <button onclick="showSub('roedores','estoque')">Estoque</button>
+      <button onclick="showSub('roedores','entrada')">Entrada</button>
+      <button onclick="showSub('roedores','saida')">Saída</button>
+    </div>
+    <div class="subview active" id="sub-roedores-nascimento"></div>
+    <div class="subview" id="sub-roedores-abate"></div>
+    <div class="subview" id="sub-roedores-estoque"></div>
+    <div class="subview" id="sub-roedores-entrada"></div>
+    <div class="subview" id="sub-roedores-saida"></div>
+  </div>
+
+  <!-- VIEW: TREINAMENTO DE AVES -->
+  <div class="view" id="view-aves">
+    <div class="module-header">
+      <div>
+        <h2>Treinamento de aves</h2>
+        <p>Registro de treinamento (peso e alimentação) e feedbacks</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('aves','treinamento')">Treinamento</button>
+      <button onclick="showSub('aves','feedback')">Feedbacks</button>
+    </div>
+    <div class="subview active" id="sub-aves-treinamento"></div>
+    <div class="subview" id="sub-aves-feedback"></div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== PAINEL GERAL (atividades) ===================== */
+
+const STAGES = ["Não iniciado","Em planejamento","Em execução","Atrasado","Concluído"];
+const STAGE_COLOR = {
+  "Não iniciado":"#8A8F98",
+  "Em planejamento":"#C97A2B",
+  "Em execução":"#2E6DA4",
+  "Atrasado":"#B24A3C",
+  "Concluído":"#3E8760"
+};
+const STAT_CLASS = {
+  "Não iniciado":"s-nao",
+  "Em planejamento":"s-plan",
+  "Em execução":"s-exec",
+  "Atrasado":"s-atraso",
+  "Concluído":"s-concl"
+};
+
+const SEED = [
+  {id:1, area:"Comunicação", title:"Administrar grupos de WhatsApp do Operacional", status:"Em execução",
+   next:"Mapear e padronizar nomes dos grupos existentes", responsavel:"Duílio", prazo:"", indicador:"Nº de grupos ativos vs. necessários", emails:""},
+  {id:2, area:"Comunicação", title:"Fixar regras de uso em cada grupo", status:"Não iniciado",
+   next:"Redigir mensagem padrão de regras", responsavel:"Duílio", prazo:"", indicador:"Tempo médio de resposta a msgs críticas", emails:""},
+  {id:3, area:"Reuniões", title:"Agendamento e mediação de reuniões operacionais", status:"Em execução",
+   next:"Definir calendário fixo de recorrências", responsavel:"Duílio", prazo:"", indicador:"% de reuniões com ata entregue no prazo", emails:""},
+  {id:4, area:"Reuniões", title:"Padronizar modelo de ata e follow-up", status:"Em planejamento",
+   next:"Criar template de ata", responsavel:"Duílio", prazo:"", indicador:"% de ações concluídas no prazo", emails:""},
+  {id:5, area:"Qualidade", title:"Auditoria interna de procedimentos e atendimento", status:"Em execução",
+   next:"Definir checklist e amostragem mensal", responsavel:"Duílio", prazo:"", indicador:"% de conformidade por período", emails:""},
+  {id:6, area:"Qualidade", title:"Relatório consolidado de não conformidades", status:"Não iniciado",
+   next:"Montar template de relatório mensal", responsavel:"Duílio", prazo:"", indicador:"Nº de reincidências por colaborador", emails:""},
+  {id:7, area:"Capacitação", title:"Gestão de cursos (planejar, divulgar, executar)", status:"Em planejamento",
+   next:"Definir tema e cronograma do próximo curso", responsavel:"Duílio", prazo:"", indicador:"Taxa de comparecimento e satisfação", emails:""},
+  {id:8, area:"Estratégia", title:"Planejamento estratégico operacional", status:"Em execução",
+   next:"Definir metas trimestrais por frente", responsavel:"Duílio", prazo:"", indicador:"% de metas atingidas por ciclo", emails:""},
+  {id:9, area:"Estratégia", title:"Reunião mensal de acompanhamento de metas", status:"Não iniciado",
+   next:"Agendar 1ª reunião de acompanhamento", responsavel:"Duílio", prazo:"", indicador:"Desvio planejado x realizado", emails:""},
+  {id:10, area:"Equipe", title:"Supervisão da Coordenação Operacional", status:"Em execução",
+   next:"Realizar 1:1 quinzenal com a Coordenação Operacional", responsavel:"Duílio", prazo:"", indicador:"Metas da Coordenação Operacional atingidas", emails:""},
+  {id:11, area:"Equipe", title:"Matriz de responsabilidades da Coordenação Operacional", status:"Não iniciado",
+   next:"Mapear quem decide/executa o quê", responsavel:"Duílio", prazo:"", indicador:"Nº de escalonamentos por mês", emails:""}
+];
+
+let data = [];
+let activeFilter = "Todas";
+let APPS_SCRIPT_URL = null;
+
+/* Se você quiser que TODAS as cópias deste arquivo já venham conectadas à
+   mesma planilha (sem cada pessoa precisar configurar), cole a URL do seu
+   Apps Script aqui embaixo, entre as aspas: */
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLvpvrmDgtd2VZU4e0NTaIBwFTRMTIECRAHh8W-l31D4S1sPkP0bD8dNy5wASW41P0cA/exec";
+
+/* ---- Camada de armazenamento: usa Google Sheets (Apps Script) se configurado,
+   senão cai de volta no armazenamento do Claude (window.storage) ---- */
+
+async function getAppsScriptUrl(){
+  try{
+    const res = await window.storage.get('apps-script-url');
+    return res.value || DEFAULT_APPS_SCRIPT_URL || null;
+  }catch(e){
+    try{
+      return localStorage.getItem('apps-script-url') || DEFAULT_APPS_SCRIPT_URL || null;
+    }catch(e2){
+      return window.__memConfigUrl || DEFAULT_APPS_SCRIPT_URL || null;
+    }
+  }
+}
+
+async function setAppsScriptUrl(url){
+  try{
+    await window.storage.set('apps-script-url', url);
+  }catch(e){
+    try{
+      localStorage.setItem('apps-script-url', url);
+    }catch(e2){
+      window.__memConfigUrl = url;
+    }
+  }
+}
+
+async function testAppsScriptConnection(url){
+  try{
+    const res = await fetch(url + '?action=ping', { method:'GET' });
+    if(!res.ok){
+      return { ok:false, message:
+        "O servidor respondeu com status " + res.status + ".\n" +
+        "Verifique se a implantação está ativa e se \"Quem pode acessar\" está definido como \"Qualquer pessoa\"." };
+    }
+    let json;
+    try{
+      json = await res.json();
+    }catch(e){
+      return { ok:false, message:
+        "A resposta não veio em formato JSON.\n" +
+        "Confira se a URL termina em /exec (e não em /dev)." };
+    }
+    if(json.error){
+      return { ok:false, message: "O script respondeu com erro: " + json.error };
+    }
+    return { ok:true };
+  }catch(e){
+    return { ok:false, message:
+      "Falha ao conectar (" + (e && e.message ? e.message : e) + ").\n" +
+      "Confira se a URL está correta, termina em /exec, e se a implantação está com acesso \"Qualquer pessoa\"." };
+  }
+}
+
+async function configureSheets(){
+  const current = APPS_SCRIPT_URL || '';
+  const url = prompt(
+    "Cole aqui a URL do seu Google Apps Script (termina em /exec).\n\nDeixe em branco e confirme para desligar a sincronização e voltar a salvar apenas dentro do Claude.",
+    current
+  );
+  if(url === null) return;
+  const trimmed = url.trim();
+
+  if(!trimmed){
+    await setAppsScriptUrl('');
+    APPS_SCRIPT_URL = null;
+    SESSION = null;
+    await setStoredSession(null);
+    updateSyncStatus();
+    await init(true);
+    return;
+  }
+
+  if(!trimmed.startsWith('http')){
+    alert("Essa não parece ser uma URL válida. Verifique e tente novamente.");
+    return;
+  }
+
+  document.getElementById('syncStatus').textContent = "Testando conexão com o Google Sheets…";
+  const test = await testAppsScriptConnection(trimmed);
+  if(!test.ok){
+    alert("Não foi possível conectar ao Google Sheets:\n\n" + test.message);
+    updateSyncStatus();
+    return;
+  }
+
+  await setAppsScriptUrl(trimmed);
+  APPS_SCRIPT_URL = trimmed;
+  SESSION = null;
+  await setStoredSession(null);
+  updateSyncStatus();
+  await init(true);
+}
+
+function updateSyncStatus(){
+  const el = document.getElementById('syncStatus');
+  if(APPS_SCRIPT_URL){
+    el.textContent = "Sincronizado com o Google Sheets";
+  }else{
+    el.textContent = "Salvando apenas dentro do Claude (Google Sheets não configurado)";
+  }
+}
+
+/* ---- Sessão de login (e-mail/senha) ---- */
+
+let SESSION = null; // { token, email, nome, papel }
+
+async function getStoredSession(){
+  try{
+    const res = await window.storage.get('session');
+    return res.value ? JSON.parse(res.value) : null;
+  }catch(e){
+    try{
+      const raw = localStorage.getItem('session');
+      return raw ? JSON.parse(raw) : null;
+    }catch(e2){
+      return window.__memSession || null;
+    }
+  }
+}
+
+async function setStoredSession(session){
+  const raw = session ? JSON.stringify(session) : '';
+  try{
+    await window.storage.set('session', raw);
+  }catch(e){
+    try{
+      if(raw) localStorage.setItem('session', raw);
+      else localStorage.removeItem('session');
+    }catch(e2){
+      window.__memSession = session;
+    }
+  }
+}
+
+function showLogin(message){
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appRoot').style.display = 'none';
+  const errEl = document.getElementById('loginError');
+  if(errEl) errEl.textContent = message || '';
+}
+
+function showApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+  updateUserInfo();
+  applyRolePermissions();
+}
+
+function updateUserInfo(){
+  const el = document.getElementById('userInfo');
+  if(!el) return;
+  if(SESSION){
+    el.textContent = SESSION.nome + " · " + (SESSION.papel === 'adm' ? 'Administrador' : SESSION.papel);
+  }else{
+    el.textContent = '';
+  }
+}
+
+function applyRolePermissions(){
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const resetBtn = document.getElementById('resetBtn');
+  if(resetBtn) resetBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
+}
+
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+
+  if(!APPS_SCRIPT_URL){
+    errEl.textContent = "O Google Sheets não está configurado neste dashboard. Use \"Configurar Google Sheets\" primeiro.";
+    return;
+  }
+  if(!email || !password){
+    errEl.textContent = "Preencha e-mail e senha.";
+    return;
+  }
+
+  let res, json;
+  try{
+    res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'login', email:email, password:password })
+    });
+    json = await res.json();
+  }catch(e){
+    errEl.textContent = "Erro de conexão: " + (e.message || e);
+    return;
+  }
+  if(json.error){
+    errEl.textContent = json.error;
+    return;
+  }
+
+  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel };
+  await setStoredSession(SESSION);
+  showApp();
+  await init(true);
+}
+
+async function doLogout(){
+  SESSION = null;
+  await setStoredSession(null);
+  showLogin();
+}
+
+function handleSessionExpired(){
+  SESSION = null;
+  setStoredSession(null);
+  showLogin("Sua sessão expirou. Faça login novamente.");
+}
+
+async function storageGet(key){
+  if(APPS_SCRIPT_URL){
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : ''));
+    }catch(e){
+      throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
+    }
+    if(!res.ok){
+      throw new Error('CONN_ERROR: servidor respondeu status ' + res.status);
+    }
+    try{
+      json = await res.json();
+    }catch(e){
+      throw new Error('CONN_ERROR: resposta não é JSON válido');
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      throw new Error('AUTH_EXPIRED');
+    }
+    if(json.error) throw new Error('CONN_ERROR: ' + json.error);
+    if(json.value === null || json.value === undefined) throw new Error('NOT_FOUND');
+    return { value: json.value };
+  }
+  return await window.storage.get(key);
+}
+
+async function storageSet(key, value){
+  if(APPS_SCRIPT_URL){
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'set', key: key, value: value, token: SESSION ? SESSION.token : '' })
+      });
+    }catch(e){
+      throw new Error('falha de rede/CORS: ' + (e.message||e));
+    }
+    if(!res.ok) throw new Error('servidor respondeu status ' + res.status);
+    try{
+      json = await res.json();
+    }catch(e){
+      throw new Error('resposta não é JSON válido');
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      throw new Error('AUTH_EXPIRED');
+    }
+    if(json.error) throw new Error(json.error);
+    return { calendarWarning: json.calendarWarning || null };
+  }
+  await window.storage.set(key, value);
+  return { calendarWarning: null };
+}
+
+async function loadData(){
+  try{
+    const res = await storageGet('painel-atividades');
+    data = JSON.parse(res.value);
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    if(APPS_SCRIPT_URL && String(e.message).startsWith('CONN_ERROR')){
+      data = [];
+      document.getElementById('lastUpdate').textContent =
+        "Não foi possível carregar do Google Sheets agora (" + e.message.replace('CONN_ERROR: ','') + "). Os dados não foram alterados na planilha.";
+      renderGeral();
+      return;
+    }
+    data = JSON.parse(JSON.stringify(SEED));
+    await save();
+  }
+  renderGeral();
+}
+
+async function save(){
+  try{
+    const result = await storageSet('painel-atividades', JSON.stringify(data));
+    let msg = "Atualizado em " + new Date().toLocaleString('pt-BR');
+    if(result && result.calendarWarning){
+      msg += " · Planilha salva, mas a Agenda não sincronizou (" + result.calendarWarning + ")";
+    }
+    document.getElementById('lastUpdate').textContent = msg;
+  }catch(e){
+    document.getElementById('lastUpdate').textContent =
+      "Erro ao salvar (" + (e.message || e) + ") — alterações podem não persistir.";
+  }
+}
+
+async function resetData(){
+  if(APPS_SCRIPT_URL){
+    if(!SESSION || SESSION.papel !== 'adm'){
+      alert("Somente administradores podem restaurar os dados.");
+      return;
+    }
+    if(!confirm("Esta ação apaga os dados da PLANILHA COMPARTILHADA para TODAS AS PESSOAS que usam este dashboard. Não pode ser desfeita. Deseja continuar?")) return;
+
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'reset', token: SESSION.token, seed: JSON.stringify(SEED) })
+      });
+      json = await res.json();
+    }catch(e){
+      alert("Erro ao tentar restaurar: " + (e.message || e));
+      return;
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      return;
+    }
+    if(json.error){
+      alert("Não foi possível restaurar: " + json.error);
+      return;
+    }
+    alert("Dados restaurados com sucesso para todos.");
+    await init(true);
+    return;
+  }
+
+  if(!confirm("Restaurar os dados originais? Isso apaga as alterações feitas neste navegador.")) return;
+  data = JSON.parse(JSON.stringify(SEED));
+  await save();
+  for(const key of Object.keys(LOG_CONFIGS)){
+    logData[key] = [];
+    await saveLog(key);
+  }
+  renderGeral();
+  renderAllLogs();
+}
+
+function updateField(id, field, value){
+  const item = data.find(d=>d.id===id);
+  item[field] = value;
+  save();
+}
+
+function renderStats(){
+  const counts = {};
+  STAGES.forEach(s=>counts[s]=0);
+  data.forEach(d=>counts[d.status]++);
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat total"><div class="num">${data.length}</div><div class="lbl">Total de atividades</div></div>
+    ${STAGES.map(s=>`
+      <div class="stat ${STAT_CLASS[s]}">
+        <div class="num">${counts[s]}</div>
+        <div class="lbl">${s}</div>
+      </div>`).join('')}
+  `;
+}
+
+function renderFilters(){
+  const areas = ["Todas", ...Array.from(new Set(data.map(d=>d.area)))];
+  const el = document.getElementById('filters');
+  el.innerHTML = areas.map(a=>
+    `<button class="chip ${a===activeFilter?'active':''}" onclick="setFilter('${a}')">${a}</button>`
+  ).join('');
+}
+
+function setFilter(a){
+  activeFilter = a;
+  renderGeral();
+}
+
+function renderCards(){
+  const el = document.getElementById('cards');
+  const items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
+  el.innerHTML = items.map(item=>{
+    const stageIdx = STAGES.indexOf(item.status);
+    const color = STAGE_COLOR[item.status];
+    const segs = STAGES.map((s,i)=>{
+      const on = i<=stageIdx;
+      const isLast = i===stageIdx;
+      return `<div class="seg ${on?'on':''}" style="--stage-color:${color}">${isLast?'<div class="dot" style="--stage-color:'+color+'"></div>':''}</div>`;
+    }).join('');
+    return `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag">${item.area}</span>
+              <span class="card-title">${item.title}</span>
+            </div>
+            <div class="card-sub">Responsável: ${item.responsavel}</div>
+          </div>
+          <select class="status-select" onchange="updateStatus(${item.id}, this.value)" style="color:${color};border-color:${color}55">
+            ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="track">${segs}</div>
+        <div class="track-labels">${STAGES.map(s=>`<span>${s}</span>`).join('')}</div>
+
+        <div class="card-grid">
+          <div class="field">
+            <label>Próxima ação</label>
+            <textarea onchange="updateField(${item.id},'next',this.value)">${item.next}</textarea>
+          </div>
+          <div class="field">
+            <label>Prazo</label>
+            <input type="date" value="${item.prazo}" onchange="updateField(${item.id},'prazo',this.value)">
+          </div>
+          <div class="field">
+            <label>Indicador chave</label>
+            <div class="indic">${item.indicador}</div>
+          </div>
+        </div>
+        <div class="field field-emails">
+          <label>E-mails dos convidados (separados por vírgula) — recebem convite no Google Agenda com permissão de edição</label>
+          <input type="text" placeholder="ex: pessoa1@empresa.com, pessoa2@empresa.com"
+                 value="${item.emails || ''}"
+                 onchange="updateField(${item.id},'emails',this.value)">
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateStatus(id, value){
+  const item = data.find(d=>d.id===id);
+  item.status = value;
+  save();
+  renderGeral();
+}
+
+function renderGeral(){
+  renderStats();
+  renderFilters();
+  renderCards();
+}
+
+/* ===================== NAV: VIEWS E SUBVIEWS ===================== */
+
+function showView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.mainnav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-'+name).classList.add('active');
+}
+
+function showSub(module, name){
+  const prefix = 'sub-'+module+'-';
+  document.querySelectorAll('#view-'+module+' .subview').forEach(v=>v.classList.remove('active'));
+  document.getElementById(prefix+name).classList.add('active');
+  document.querySelectorAll('#view-'+module+' .subnav button').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+/* ===================== MÓDULOS: ROEDORES E AVES (tabelas de registro) ===================== */
+
+const LOG_CONFIGS = {
+  'roedores-nascimento': {
+    container:'sub-roedores-nascimento',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'obs', label:'Observação', type:'text'}
+    ]
+  },
+  'roedores-abate': {
+    container:'sub-roedores-abate',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'motivo', label:'Motivo / destino', type:'text'}
+    ]
+  },
+  'roedores-entrada': {
+    container:'sub-roedores-entrada',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'origem', label:'Origem / fornecedor', type:'text'}
+    ]
+  },
+  'roedores-saida': {
+    container:'sub-roedores-saida',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'destino', label:'Destino', type:'text'}
+    ]
+  },
+  'aves-treinamento': {
+    container:'sub-aves-treinamento',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'ave_id', label:'Identificação da ave', type:'text'},
+      {key:'peso_inicial', label:'Peso inicial (g)', type:'number'},
+      {key:'peso_final', label:'Peso final (g)', type:'number'},
+      {key:'alimentacao', label:'Alimentação', type:'text'},
+      {key:'obs', label:'Observação', type:'text'}
+    ]
+  },
+  'aves-feedback': {
+    container:'sub-aves-feedback',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'ave_id', label:'Identificação (opcional)', type:'text'},
+      {key:'responsavel', label:'Responsável', type:'text'},
+      {key:'feedback', label:'Feedback', type:'textarea'}
+    ]
+  }
+};
+
+let logData = {};
+
+async function loadLogData(key){
+  try{
+    const res = await storageGet('log-'+key);
+    logData[key] = JSON.parse(res.value);
+  }catch(e){
+    logData[key] = [];
+  }
+}
+
+async function saveLog(key){
+  try{
+    await storageSet('log-'+key, JSON.stringify(logData[key]));
+  }catch(e){
+    console.error('Erro ao salvar', key, e);
+  }
+}
+
+function inputHtml(col, rowId){
+  const idAttr = `data-field="${col.key}" data-row="${rowId}"`;
+  if(col.type === 'textarea'){
+    return `<textarea ${idAttr} onchange="editLogCell(this)"></textarea>`;
+  }
+  return `<input type="${col.type}" ${idAttr} onchange="editLogCell(this)">`;
+}
+
+function renderLogTable(key){
+  const cfg = LOG_CONFIGS[key];
+  const rows = logData[key] || [];
+  const container = document.getElementById(cfg.container);
+
+  const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
+
+  const canDelete = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
+
+  const bodyRows = rows.length ? rows.map(row=>{
+    const tds = cfg.cols.map(c=>{
+      const val = row[c.key] || '';
+      if(c.type==='textarea'){
+        return `<td><textarea onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)">${val}</textarea></td>`;
+      }
+      return `<td><input type="${c.type}" value="${val}" onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)"></td>`;
+    }).join('');
+    const delCell = canDelete
+      ? `<td><button class="rowdel" onclick="deleteLogRow('${key}',${row.id})">Remover</button></td>`
+      : `<td></td>`;
+    return `<tr>${tds}${delCell}</tr>`;
+  }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione abaixo.</td></tr>`;
+
+  const addCells = cfg.cols.map(c=>{
+    if(c.type==='textarea'){
+      return `<td><textarea id="new-${key}-${c.key}" placeholder="${c.label}"></textarea></td>`;
+    }
+    return `<td><input type="${c.type}" id="new-${key}-${c.key}" placeholder="${c.label}"></td>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap">
+      <table class="logtable">
+        <thead><tr>${headCols}</tr></thead>
+        <tbody>
+          ${bodyRows}
+          <tr class="addrow">
+            ${addCells}
+            <td><button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="addLogRow('${key}')">Adicionar</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function addLogRow(key){
+  const cfg = LOG_CONFIGS[key];
+  const newRow = {id: Date.now()};
+  let hasValue = false;
+  cfg.cols.forEach(c=>{
+    const el = document.getElementById(`new-${key}-${c.key}`);
+    const val = el.value;
+    if(val) hasValue = true;
+    newRow[c.key] = val;
+    el.value = '';
+  });
+  if(!hasValue) return;
+  logData[key].push(newRow);
+  saveLog(key);
+  renderLogTable(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
+}
+
+function updateLogRow(key, id, field, value){
+  const row = logData[key].find(r=>r.id===id);
+  row[field] = value;
+  saveLog(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
+}
+
+function deleteLogRow(key, id){
+  if(APPS_SCRIPT_URL && (!SESSION || SESSION.papel !== 'adm')){
+    alert("Somente administradores podem excluir registros.");
+    return;
+  }
+  logData[key] = logData[key].filter(r=>r.id!==id);
+  saveLog(key);
+  renderLogTable(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
+}
+
+/* ---- Gráficos simples (SVG, sem dependências externas) ---- */
+
+function formatDateShort(iso){
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d.getTime())) return iso;
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+function buildLineChartSVG(series, opts){
+  opts = opts || {};
+  const width = opts.width || 640;
+  const height = opts.height || 200;
+  const padL = 40, padR = 12, padT = 14, padB = 28;
+
+  const allPoints = series.reduce((acc,s)=>acc.concat(s.points), []);
+  if(allPoints.length === 0){
+    return '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Sem dados suficientes para o gráfico ainda.</p>';
+  }
+
+  const xs = allPoints.map(p=>p.x);
+  const ys = allPoints.map(p=>p.y);
+  const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+  const minY = Math.min(0, Math.min.apply(null, ys));
+  const maxY = Math.max(1, Math.max.apply(null, ys));
+
+  const xScale = x => padL + (maxX===minX ? 0 : (x-minX)/(maxX-minX)) * (width-padL-padR);
+  const yScale = y => height-padB - (maxY===minY ? 0 : (y-minY)/(maxY-minY)) * (height-padT-padB);
+  const zeroY = yScale(0);
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block;">`;
+  svg += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${width-padR}" y2="${zeroY.toFixed(1)}" stroke="#D8D6CC" stroke-width="1"/>`;
+  svg += `<text x="${padL-6}" y="${(zeroY+3).toFixed(1)}" font-size="9.5" text-anchor="end" fill="#8A8F98">0</text>`;
+  svg += `<text x="${padL-6}" y="${(padT+8).toFixed(1)}" font-size="9.5" text-anchor="end" fill="#8A8F98">${Math.round(maxY)}</text>`;
+
+  series.forEach(s=>{
+    const pts = s.points;
+    if(pts.length===0) return;
+    const path = pts.map((p,i)=> (i===0?'M':'L') + xScale(p.x).toFixed(1) + ',' + yScale(p.y).toFixed(1)).join(' ');
+    svg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2"/>`;
+    pts.forEach(p=>{
+      svg += `<circle cx="${xScale(p.x).toFixed(1)}" cy="${yScale(p.y).toFixed(1)}" r="3" fill="${s.color}"/>`;
+    });
+  });
+
+  const base = series[0].points;
+  const tickCount = Math.min(6, base.length);
+  if(tickCount>0){
+    const step = Math.max(1, Math.floor(base.length / tickCount));
+    for(let i=0;i<base.length;i+=step){
+      const p = base[i];
+      const label = p.tick ? formatDateShort(p.tick) : String(p.x);
+      svg += `<text x="${xScale(p.x).toFixed(1)}" y="${height-8}" font-size="9.5" text-anchor="middle" fill="#8A8F98">${label}</text>`;
+    }
+  }
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderEstoque(){
+  const container = document.getElementById('sub-roedores-estoque');
+  const nasc = logData['roedores-nascimento'] || [];
+  const ent = logData['roedores-entrada'] || [];
+  const aba = logData['roedores-abate'] || [];
+  const sai = logData['roedores-saida'] || [];
+
+  const linhagens = new Set();
+  [nasc,ent,aba,sai].forEach(arr=>arr.forEach(r=>{ if(r.linhagem) linhagens.add(r.linhagem); }));
+
+  const sum = (arr, linhagem) => arr
+    .filter(r=> linhagem==null ? true : r.linhagem===linhagem)
+    .reduce((acc,r)=> acc + (parseFloat(r.quantidade)||0), 0);
+
+  const totalNasc = sum(nasc), totalEnt = sum(ent), totalAba = sum(aba), totalSai = sum(sai);
+  const totalEstoque = totalNasc + totalEnt - totalAba - totalSai;
+
+  const rows = Array.from(linhagens).sort().map(l=>{
+    const n = sum(nasc,l), e = sum(ent,l), a = sum(aba,l), s = sum(sai,l);
+    const estoque = n + e - a - s;
+    return `<tr>
+      <td>${l}</td><td>${n}</td><td>${e}</td><td>${a}</td><td>${s}</td>
+      <td style="font-weight:700">${estoque}</td>
+    </tr>`;
+  }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum registro com linhagem/lote informado ainda.</td></tr>`;
+
+  const events = [];
+  nasc.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
+  ent.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
+  aba.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
+  sai.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
+  events.sort((a,b)=> new Date(a.data) - new Date(b.data));
+  let running = 0;
+  const stockPoints = events.map((e,i)=>{ running += e.delta; return { x:i, y:running, tick:e.data }; });
+  const stockChart = buildLineChartSVG([{ label:'Estoque', color:'#2E6DA4', points: stockPoints }]);
+
+  container.innerHTML = `
+    <div class="estoque-summary">
+      <div class="stat total"><div class="num">${totalEstoque}</div><div class="lbl">Estoque atual total</div></div>
+      <div class="stat s-concl"><div class="num">${totalNasc}</div><div class="lbl">Total nascimentos</div></div>
+      <div class="stat s-exec"><div class="num">${totalEnt}</div><div class="lbl">Total entradas</div></div>
+      <div class="stat s-atraso"><div class="num">${totalAba}</div><div class="lbl">Total abates</div></div>
+      <div class="stat s-plan"><div class="num">${totalSai}</div><div class="lbl">Total saídas</div></div>
+    </div>
+    <div class="logtable-wrap" style="margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução do estoque ao longo do tempo</div>
+      ${stockChart}
+    </div>
+    <div class="logtable-wrap">
+      <table class="logtable">
+        <thead>
+          <tr><th>Linhagem / lote</th><th>Nascimentos</th><th>Entradas</th><th>Abates</th><th>Saídas</th><th>Estoque atual</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderAllLogs(){
+  for(const key of Object.keys(LOG_CONFIGS)){
+    if(key !== 'estoque'){
+      renderLogTable(key);
+    }
+  }
+  renderEstoque();
+  renderAvesWeightChart();
+}
+
+function renderAvesWeightChart(){
+  const container = document.getElementById('sub-aves-treinamento');
+  const existing = document.getElementById('aves-chart-block');
+  if(existing) existing.remove();
+
+  const items = (logData['aves-treinamento'] || [])
+    .filter(r => r.data)
+    .sort((a,b) => new Date(a.data) - new Date(b.data));
+
+  const chartHtml = items.length === 0
+    ? `<div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
+         <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Adicione registros de treinamento com data e pesos para ver o gráfico de evolução.</p>
+       </div>`
+    : (() => {
+        const series = [
+          { label:'Peso inicial (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) },
+          { label:'Peso final (g)', color:'#3E8760', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_final)||0, tick:r.data })) }
+        ];
+        const svg = buildLineChartSVG(series);
+        return `
+          <div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução de peso por sessão de treinamento</div>
+            ${svg}
+            <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft);">
+              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>Peso inicial</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#3E8760;border-radius:2px;margin-right:5px;"></span>Peso final</span>
+            </div>
+          </div>
+        `;
+      })();
+
+  container.insertAdjacentHTML('beforeend', chartHtml);
+}
+
+/* ===================== INIT ===================== */
+
+async function init(skipUrlReload){
+  if(!skipUrlReload){
+    APPS_SCRIPT_URL = await getAppsScriptUrl();
+  }
+  updateSyncStatus();
+
+  if(!APPS_SCRIPT_URL){
+    // Sem Google Sheets configurado: modo local dentro do Claude, sem exigir login.
+    showApp();
+    await loadData();
+    for(const key of Object.keys(LOG_CONFIGS)){
+      await loadLogData(key);
+    }
+    renderAllLogs();
+    return;
+  }
+
+  if(!skipUrlReload){
+    SESSION = await getStoredSession();
+  }
+  if(!SESSION || !SESSION.token){
+    showLogin();
+    return;
+  }
+
+  showApp();
+  await loadData();
+  if(!SESSION){
+    // A sessão pode ter expirado durante o carregamento das atividades.
+    return;
+  }
+  for(const key of Object.keys(LOG_CONFIGS)){
+    await loadLogData(key);
+  }
+  renderAllLogs();
+}
+
+init();
+</script>
+</body>
+</html>
