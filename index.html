@@ -1,668 +1,1666 @@
-/**
- * PAINEL OPERACIONAL — BACKEND GOOGLE SHEETS + AGENDA + LOGIN
- * ---------------------------------------------------
- * Como instalar:
- * 1. Crie uma Google Planilha nova (sheets.new).
- * 2. Menu Extensões > Apps Script.
- * 3. Apague o conteúdo do arquivo Code.gs e cole TODO o conteúdo deste arquivo.
- * 4. No menu suspenso ao lado de "Executar" (topo do editor), selecione
- *    a função "autorizarAgenda" e clique em "Executar".
- * 5. Aceite a tela de permissão ("App não verificado" > Configurações
- *    avançadas > Acessar [nome do projeto] (não seguro) > Permitir).
- *    Isso concede acesso à sua Agenda do Google.
- * 6. Selecione a função "criarPrimeiroAdmin" no mesmo menu suspenso,
- *    edite antes o e-mail/senha dentro dela (mais abaixo neste arquivo)
- *    e clique em "Executar" para criar seu usuário administrador.
- * 7. Clique em "Implantar" > "Nova implantação".
- * 8. Tipo: "App da Web".
- * 9. Executar como: "Eu" (sua conta).
- * 10. Quem pode acessar: "Qualquer pessoa".
- * 11. Clique em Implantar, autorize novamente se pedido.
- * 12. Copie a URL gerada (termina em /exec) e cole no dashboard
- *     HTML, no botão "Configurar Google Sheets".
- *
- * Toda atividade do Painel Geral que tiver um Prazo preenchido vira um
- * evento na sua Google Agenda automaticamente, atualizado a cada
- * alteração de status/prazo — sem duplicar eventos. Se a atividade
- * tiver e-mails no campo "convidados" (preenchido no dashboard), esses
- * e-mails são convidados no evento com permissão de edição (mas nunca
- * de exclusão — isso é o padrão do Google Calendar).
- *
- * Os registros de Criação de Roedores e Treinamento de Aves também
- * viram eventos na Agenda automaticamente, um para cada linha com data
- * preenchida (nascimento, abate, entrada, saída, treinamento, feedback).
- *
- * LOGIN E PERMISSÕES:
- * - Ninguém acessa dado nenhum sem fazer login (e-mail + senha).
- * - Papel "adm": edita tudo, exclui registros e pode restaurar os
- *   dados originais.
- * - Qualquer outro papel (ex: "editor"): pode ver e editar/adicionar
- *   registros em todos os módulos, mas NÃO pode excluir registros nem
- *   restaurar os dados — essas duas ações são bloqueadas no servidor,
- *   não só escondidas na tela.
- * - Sessões expiram sozinhas depois de 6 horas (é preciso logar de novo).
- * - Para criar mais usuários, use o painel "Gerenciar usuários" dentro
- *   do próprio dashboard (só aparece para administradores) — não
- *   precisa mais editar código para cada pessoa nova. A função
- *   "criarNovoUsuario" mais abaixo continua funcionando como alternativa
- *   manual, caso prefira.
- *
- * Cada vez que você editar este código, é preciso gerar uma NOVA
- * implantação (ou editar a implantação existente em "Gerenciar
- * implantações") para as mudanças valerem — só salvar o arquivo
- * não atualiza a URL já publicada.
- *
- * Para testar rapidamente se está no ar: cole a URL /exec direto
- * na barra de endereço do navegador. Deve aparecer algo como
- * {"error":"chave inválida: undefined"} — isso é o esperado e
- * significa que o servidor está respondendo corretamente.
- */
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel Operacional — Duílio</title>
+<style>
+  :root{
+    --navy:#122238;
+    --navy-2:#1B3554;
+    --steel:#2E6DA4;
+    --steel-light:#DCE9F5;
+    --amber:#C97A2B;
+    --amber-light:#F7E6CF;
+    --sage:#3E8760;
+    --sage-light:#DCEEE2;
+    --gray:#8A8F98;
+    --gray-light:#E7E7E4;
+    --red:#B24A3C;
+    --red-light:#F5DEDA;
+    --bg:#F3F2ED;
+    --panel:#FFFFFF;
+    --ink:#1B2430;
+    --ink-soft:#5B6472;
+    --line:#E1DFD7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 60px;}
 
-const SHEET_MAP = {
-  'painel-atividades': 'Atividades',
-  'log-roedores-nascimento': 'Roedores_Nascimento',
-  'log-roedores-abate': 'Roedores_Abate',
-  'log-roedores-entrada': 'Roedores_Entrada',
-  'log-roedores-saida': 'Roedores_Saida',
-  'log-aves-treinamento': 'Aves_Treinamento',
-  'log-aves-feedback': 'Aves_Feedback'
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    border-radius:14px;
+    padding:26px 30px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    margin-bottom:14px;
+  }
+  .topbar .eyebrow{
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:#9FB6CE;
+    margin:0 0 6px;
+    font-weight:600;
+  }
+  .topbar h1{
+    margin:0;
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .topbar .meta{
+    font-size:12.5px;
+    color:#9FB6CE;
+    margin-top:6px;
+  }
+  .topbar .actions{display:flex;gap:8px;align-items:center;}
+  .btn{
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.25);
+    color:#fff;
+    padding:9px 14px;
+    border-radius:8px;
+    font-size:12.5px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .btn:hover{background:rgba(255,255,255,.16);}
+  .btn.small{padding:6px 10px;font-size:11.5px;}
+  .btn.danger{background:rgba(178,74,60,.18);border-color:rgba(178,74,60,.5);}
+
+  /* Main section nav */
+  .mainnav{
+    display:flex;
+    gap:8px;
+    margin-bottom:20px;
+    border-bottom:2px solid var(--line);
+    padding-bottom:0;
+  }
+  .mainnav button{
+    border:none;
+    background:transparent;
+    padding:12px 18px;
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    margin-bottom:-2px;
+  }
+  .mainnav button.active{
+    color:var(--navy);
+    border-bottom:3px solid var(--steel);
+  }
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:10px;
+    margin-bottom:22px;
+  }
+  .stat{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 16px;
+  }
+  .stat .num{font-size:26px;font-weight:700;line-height:1;}
+  .stat .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:6px;font-weight:600;}
+  .stat.total{background:var(--navy);color:#fff;}
+  .stat.total .lbl{color:#9FB6CE;}
+  .stat.s-nao .num{color:var(--gray);}
+  .stat.s-plan .num{color:var(--amber);}
+  .stat.s-exec .num{color:var(--steel);}
+  .stat.s-atraso .num{color:var(--red);}
+  .stat.s-concl .num{color:var(--sage);}
+
+  .filters{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  .chip{
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink-soft);
+    padding:7px 14px;
+    border-radius:20px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .chip.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+  .cards{display:flex;flex-direction:column;gap:12px;}
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px 20px;
+  }
+  .card-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    margin-bottom:14px;
+  }
+  .card-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .area-tag{
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:5px;
+    background:var(--steel-light);
+    color:var(--navy-2);
+    white-space:nowrap;
+  }
+  .card-title{font-size:15.5px;font-weight:700;color:var(--ink);}
+  .card-sub{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+
+  .status-select{
+    font-size:12px;
+    font-weight:700;
+    border-radius:7px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    cursor:pointer;
+  }
+
+  .track{
+    display:flex;
+    align-items:center;
+    margin:14px 0 16px;
+  }
+  .seg{
+    flex:1;
+    height:6px;
+    background:var(--gray-light);
+    position:relative;
+  }
+  .seg:first-child{border-radius:6px 0 0 6px;}
+  .seg:last-child{border-radius:0 6px 6px 0;}
+  .seg + .seg{margin-left:3px;}
+  .seg.on{background:var(--stage-color,var(--steel));}
+  .dot{
+    position:absolute;top:-4px;right:-7px;
+    width:14px;height:14px;border-radius:50%;
+    background:var(--stage-color,var(--steel));
+    border:2px solid var(--panel);
+  }
+  .track-labels{
+    display:flex;
+    font-size:9.5px;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    font-weight:600;
+    margin-top:6px;
+  }
+  .track-labels span{flex:1;text-align:center;}
+
+  .card-grid{
+    display:grid;
+    grid-template-columns:1.6fr 1fr 1fr;
+    gap:16px;
+    margin-top:4px;
+  }
+  .field label{
+    display:block;
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .field textarea, .field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:8px 10px;
+    font-size:13px;
+    font-family:inherit;
+    color:var(--ink);
+    resize:none;
+    background:#FCFCFA;
+  }
+  .field textarea{height:44px;}
+  .field .indic{
+    font-size:13px;
+    color:var(--ink-soft);
+    padding-top:4px;
+  }
+  .field-emails{margin-top:12px;}
+  .field-emails label{
+    text-transform:none;
+    letter-spacing:0;
+    font-size:11.5px;
+    font-weight:600;
+  }
+
+  /* Sub-module: Roedores / Aves */
+  .module-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .module-header h2{
+    font-size:19px;
+    margin:0;
+    font-weight:700;
+  }
+  .module-header p{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:2px 0 0;
+  }
+  .subnav{
+    display:flex;
+    gap:6px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .subnav button{
+    border:1px solid var(--line);
+    background:var(--panel);
+    padding:8px 15px;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-radius:8px;
+  }
+  .subnav button.active{
+    background:var(--steel);
+    border-color:var(--steel);
+    color:#fff;
+  }
+  .subview{display:none;}
+  .subview.active{display:block;}
+
+  .logtable-wrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:18px 20px;
+    overflow-x:auto;
+  }
+  table.logtable{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.logtable th{
+    text-align:left;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    font-weight:700;
+    padding:8px 10px;
+    border-bottom:2px solid var(--line);
+    white-space:nowrap;
+  }
+  table.logtable td{
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+    vertical-align:middle;
+  }
+  table.logtable tr.addrow td{
+    background:#FBFAF6;
+    padding:10px;
+  }
+  table.logtable input, table.logtable textarea{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:6px 8px;
+    font-size:12.5px;
+    font-family:inherit;
+    background:#fff;
+  }
+  table.logtable textarea{resize:vertical;min-height:34px;}
+  .rowdel{
+    border:none;background:transparent;color:var(--red);cursor:pointer;font-size:12px;font-weight:700;
+  }
+  .empty-row td{
+    text-align:center;color:var(--ink-soft);font-size:12.5px;padding:18px;
+  }
+
+  .estoque-summary{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:10px;
+    margin-bottom:18px;
+  }
+
+  @media (max-width:820px){
+    .stats{grid-template-columns:repeat(3,1fr);}
+    .card-grid{grid-template-columns:1fr;}
+  }
+
+  .login-screen{
+    position:fixed;
+    inset:0;
+    background:var(--navy);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:1000;
+  }
+  .login-card{
+    background:var(--panel);
+    border-radius:14px;
+    padding:34px 30px;
+    width:100%;
+    max-width:360px;
+  }
+  .login-title{
+    font-size:22px;
+    font-weight:700;
+    margin:0 0 6px;
+  }
+  .login-sub{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:0 0 22px;
+  }
+  .login-field{margin-bottom:14px;}
+  .login-field label{
+    display:block;
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .login-field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:10px 12px;
+    font-size:14px;
+    font-family:inherit;
+    background:#FCFCFA;
+  }
+  .login-btn{
+    width:100%;
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+    justify-content:center;
+    margin-top:8px;
+    padding:11px;
+    font-size:13px;
+  }
+  .login-btn:hover{background:var(--navy-2);}
+  .login-error{
+    color:var(--red);
+    font-size:12.5px;
+    margin:12px 0 0;
+    min-height:16px;
+  }
+
+  /* Painel de gerenciamento de usuários (ADM) */
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(18,34,56,0.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:1100;
+  }
+  .modal-overlay.active{display:flex;}
+  .modal-card{
+    background:var(--panel);
+    border-radius:14px;
+    padding:28px 26px;
+    width:100%;
+    max-width:560px;
+    max-height:86vh;
+    overflow-y:auto;
+  }
+  .modal-card h2{
+    font-size:19px;
+    margin:0 0 4px;
+    font-weight:700;
+  }
+  .modal-card .modal-sub{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:0 0 20px;
+  }
+  .modal-close{
+    float:right;
+    border:none;
+    background:transparent;
+    font-size:20px;
+    line-height:1;
+    color:var(--ink-soft);
+    cursor:pointer;
+  }
+  .modal-form-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-bottom:10px;
+  }
+  .modal-form-grid .full{grid-column:1 / -1;}
+  .modal-form-grid label{
+    display:block;
+    font-size:11px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .modal-form-grid input, .modal-form-grid select{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 11px;
+    font-size:13.5px;
+    font-family:inherit;
+    background:#FCFCFA;
+  }
+  .modal-error{
+    color:var(--red);
+    font-size:12.5px;
+    margin:6px 0 4px;
+    min-height:16px;
+  }
+  .users-list{margin-top:20px;}
+  .users-list h3{
+    font-size:12.5px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin:0 0 10px;
+  }
+  .user-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:10px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13px;
+  }
+  .user-row:last-child{border-bottom:none;}
+  .user-row .u-info{display:flex;flex-direction:column;gap:2px;}
+  .user-row .u-email{color:var(--ink-soft);font-size:11.5px;}
+  .user-row .u-role{
+    font-size:10.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    padding:2px 8px;
+    border-radius:5px;
+    background:var(--steel-light);
+    color:var(--navy-2);
+    margin-right:10px;
+  }
+  .user-row .u-role.role-adm{background:var(--amber-light);color:#8A5A1E;}
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen" style="display:none;">
+  <div class="login-card">
+    <p class="eyebrow" style="color:var(--ink-soft);">Gerência Operacional</p>
+    <h1 class="login-title">Painel Operacional</h1>
+    <p class="login-sub">Entre com seu e-mail e senha para continuar.</p>
+    <div class="login-field">
+      <label>E-mail</label>
+      <input type="email" id="loginEmail" autocomplete="username" placeholder="voce@empresa.com">
+    </div>
+    <div class="login-field">
+      <label>Senha</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <button class="btn login-btn" onclick="doLogin()">Entrar</button>
+    <p class="login-error" id="loginError"></p>
+  </div>
+</div>
+
+<div id="userModal" class="modal-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeUserPanel()">&times;</button>
+    <h2>Gerenciar usuários</h2>
+    <p class="modal-sub">Cadastre pessoas da equipe com acesso ao dashboard. Nível "Administrador" pode excluir registros e restaurar dados; "Editor" pode ver e editar tudo, mas não excluir.</p>
+
+    <div class="modal-form-grid">
+      <div>
+        <label>Nome</label>
+        <input type="text" id="newUserNome" placeholder="Nome da pessoa">
+      </div>
+      <div>
+        <label>Nível</label>
+        <select id="newUserPapel">
+          <option value="editor">Editor (padrão)</option>
+          <option value="adm">Administrador</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>E-mail</label>
+        <input type="email" id="newUserEmail" placeholder="pessoa@empresa.com">
+      </div>
+      <div class="full">
+        <label>Senha provisória</label>
+        <input type="text" id="newUserSenha" placeholder="mínimo 6 caracteres">
+      </div>
+    </div>
+    <p class="modal-error" id="userFormError"></p>
+    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="createUserAccount()">Criar usuário</button>
+
+    <div class="users-list">
+      <h3>Usuários cadastrados</h3>
+      <div id="usersListContainer"><p style="font-size:12.5px;color:var(--ink-soft);">Carregando…</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="appRoot" style="display:none;">
+
+  <div class="topbar">
+    <div>
+      <p class="eyebrow">Gerência Operacional</p>
+      <h1>Painel Operacional — Duílio</h1>
+      <p class="meta" id="lastUpdate">Carregando dados…</p>
+      <p class="meta" id="syncStatus">Verificando conexão com o Google Sheets…</p>
+    </div>
+    <div class="actions">
+      <span class="meta" id="userInfo" style="margin-right:6px;"></span>
+      <button class="btn" onclick="doLogout()">Sair</button>
+      <button class="btn" id="usersBtn" onclick="openUserPanel()">Gerenciar usuários</button>
+      <button class="btn" onclick="configureSheets()">Configurar Google Sheets</button>
+      <button class="btn" id="resetBtn" onclick="resetData()">Restaurar dados originais</button>
+    </div>
+  </div>
+
+  <div class="mainnav">
+    <button id="nav-geral" class="active" onclick="showView('geral')">Painel geral</button>
+    <button id="nav-roedores" onclick="showView('roedores')">Criação de roedores</button>
+    <button id="nav-aves" onclick="showView('aves')">Treinamento de aves</button>
+  </div>
+
+  <!-- VIEW: PAINEL GERAL -->
+  <div class="view active" id="view-geral">
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <!-- VIEW: CRIAÇÃO DE ROEDORES -->
+  <div class="view" id="view-roedores">
+    <div class="module-header">
+      <div>
+        <h2>Criação de roedores</h2>
+        <p>Controle de nascimento, abate, entrada, saída e estoque</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('roedores','nascimento')">Nascimento</button>
+      <button onclick="showSub('roedores','abate')">Abate</button>
+      <button onclick="showSub('roedores','estoque')">Estoque</button>
+      <button onclick="showSub('roedores','entrada')">Entrada</button>
+      <button onclick="showSub('roedores','saida')">Saída</button>
+    </div>
+    <div class="subview active" id="sub-roedores-nascimento"></div>
+    <div class="subview" id="sub-roedores-abate"></div>
+    <div class="subview" id="sub-roedores-estoque"></div>
+    <div class="subview" id="sub-roedores-entrada"></div>
+    <div class="subview" id="sub-roedores-saida"></div>
+  </div>
+
+  <!-- VIEW: TREINAMENTO DE AVES -->
+  <div class="view" id="view-aves">
+    <div class="module-header">
+      <div>
+        <h2>Treinamento de aves</h2>
+        <p>Registro de treinamento (peso e alimentação) e feedbacks</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('aves','treinamento')">Treinamento</button>
+      <button onclick="showSub('aves','feedback')">Feedbacks</button>
+    </div>
+    <div class="subview active" id="sub-aves-treinamento"></div>
+    <div class="subview" id="sub-aves-feedback"></div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== PAINEL GERAL (atividades) ===================== */
+
+const STAGES = ["Não iniciado","Em planejamento","Em execução","Atrasado","Concluído"];
+const STAGE_COLOR = {
+  "Não iniciado":"#8A8F98",
+  "Em planejamento":"#C97A2B",
+  "Em execução":"#2E6DA4",
+  "Atrasado":"#B24A3C",
+  "Concluído":"#3E8760"
+};
+const STAT_CLASS = {
+  "Não iniciado":"s-nao",
+  "Em planejamento":"s-plan",
+  "Em execução":"s-exec",
+  "Atrasado":"s-atraso",
+  "Concluído":"s-concl"
 };
 
-const USERS_SHEET = 'Usuarios';
-const ADMIN_ROLE = 'adm';
-const SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 horas
+const SEED = [
+  {id:1, area:"Comunicação", title:"Administrar grupos de WhatsApp do Operacional", status:"Em execução",
+   next:"Mapear e padronizar nomes dos grupos existentes", responsavel:"Duílio", prazo:"", indicador:"Nº de grupos ativos vs. necessários", emails:""},
+  {id:2, area:"Comunicação", title:"Fixar regras de uso em cada grupo", status:"Não iniciado",
+   next:"Redigir mensagem padrão de regras", responsavel:"Duílio", prazo:"", indicador:"Tempo médio de resposta a msgs críticas", emails:""},
+  {id:3, area:"Reuniões", title:"Agendamento e mediação de reuniões operacionais", status:"Em execução",
+   next:"Definir calendário fixo de recorrências", responsavel:"Duílio", prazo:"", indicador:"% de reuniões com ata entregue no prazo", emails:""},
+  {id:4, area:"Reuniões", title:"Padronizar modelo de ata e follow-up", status:"Em planejamento",
+   next:"Criar template de ata", responsavel:"Duílio", prazo:"", indicador:"% de ações concluídas no prazo", emails:""},
+  {id:5, area:"Qualidade", title:"Auditoria interna de procedimentos e atendimento", status:"Em execução",
+   next:"Definir checklist e amostragem mensal", responsavel:"Duílio", prazo:"", indicador:"% de conformidade por período", emails:""},
+  {id:6, area:"Qualidade", title:"Relatório consolidado de não conformidades", status:"Não iniciado",
+   next:"Montar template de relatório mensal", responsavel:"Duílio", prazo:"", indicador:"Nº de reincidências por colaborador", emails:""},
+  {id:7, area:"Capacitação", title:"Gestão de cursos (planejar, divulgar, executar)", status:"Em planejamento",
+   next:"Definir tema e cronograma do próximo curso", responsavel:"Duílio", prazo:"", indicador:"Taxa de comparecimento e satisfação", emails:""},
+  {id:8, area:"Estratégia", title:"Planejamento estratégico operacional", status:"Em execução",
+   next:"Definir metas trimestrais por frente", responsavel:"Duílio", prazo:"", indicador:"% de metas atingidas por ciclo", emails:""},
+  {id:9, area:"Estratégia", title:"Reunião mensal de acompanhamento de metas", status:"Não iniciado",
+   next:"Agendar 1ª reunião de acompanhamento", responsavel:"Duílio", prazo:"", indicador:"Desvio planejado x realizado", emails:""},
+  {id:10, area:"Equipe", title:"Supervisão da Coordenação Operacional", status:"Em execução",
+   next:"Realizar 1:1 quinzenal com a Coordenação Operacional", responsavel:"Duílio", prazo:"", indicador:"Metas da Coordenação Operacional atingidas", emails:""},
+  {id:11, area:"Equipe", title:"Matriz de responsabilidades da Coordenação Operacional", status:"Não iniciado",
+   next:"Mapear quem decide/executa o quê", responsavel:"Duílio", prazo:"", indicador:"Nº de escalonamentos por mês", emails:""}
+];
 
-function doGet(e) {
-  try {
-    if (e.parameter.action === 'ping') {
-      return jsonOutput({ ok: true });
+let data = [];
+let activeFilter = "Todas";
+let APPS_SCRIPT_URL = null;
+
+/* Se você quiser que TODAS as cópias deste arquivo já venham conectadas à
+   mesma planilha (sem cada pessoa precisar configurar), cole a URL do seu
+   Apps Script aqui embaixo, entre as aspas: */
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLvpvrmDgtd2VZU4e0NTaIBwFTRMTIECRAHh8W-l31D4S1sPkP0bD8dNy5wASW41P0cA/exec";
+
+/* ---- Camada de armazenamento: usa Google Sheets (Apps Script) se configurado,
+   senão cai de volta no armazenamento do Claude (window.storage) ---- */
+
+async function getAppsScriptUrl(){
+  try{
+    const res = await window.storage.get('apps-script-url');
+    return res.value || DEFAULT_APPS_SCRIPT_URL || null;
+  }catch(e){
+    try{
+      return localStorage.getItem('apps-script-url') || DEFAULT_APPS_SCRIPT_URL || null;
+    }catch(e2){
+      return window.__memConfigUrl || DEFAULT_APPS_SCRIPT_URL || null;
     }
+  }
+}
 
-    const session = getSession_(e.parameter.token);
-    if (!session) return jsonOutput({ error: 'unauthenticated' });
-
-    const key = e.parameter.key;
-    const sheetName = SHEET_MAP[key];
-    if (!sheetName) return jsonOutput({ error: 'chave inválida: ' + key });
-
-    const rows = readSheet(sheetName);
-    if (rows === null) {
-      return jsonOutput({ value: null });
+async function setAppsScriptUrl(url){
+  try{
+    await window.storage.set('apps-script-url', url);
+  }catch(e){
+    try{
+      localStorage.setItem('apps-script-url', url);
+    }catch(e2){
+      window.__memConfigUrl = url;
     }
-    return jsonOutput({ value: JSON.stringify(rows) });
-  } catch (err) {
-    return jsonOutput({ error: String(err) });
   }
 }
 
-function doPost(e) {
-  try {
-    const body = JSON.parse(e.postData.contents);
-
-    if (body.action === 'login') {
-      return handleLogin_(body);
+async function testAppsScriptConnection(url){
+  try{
+    const res = await fetch(url + '?action=ping', { method:'GET' });
+    if(!res.ok){
+      return { ok:false, message:
+        "O servidor respondeu com status " + res.status + ".\n" +
+        "Verifique se a implantação está ativa e se \"Quem pode acessar\" está definido como \"Qualquer pessoa\"." };
     }
-
-    const session = getSession_(body.token);
-    if (!session) {
-      return jsonOutput({ error: 'unauthenticated' });
+    let json;
+    try{
+      json = await res.json();
+    }catch(e){
+      return { ok:false, message:
+        "A resposta não veio em formato JSON.\n" +
+        "Confira se a URL termina em /exec (e não em /dev)." };
     }
-
-    if (body.action === 'reset') {
-      if (session.papel !== ADMIN_ROLE) {
-        return jsonOutput({ error: 'Somente administradores podem restaurar os dados.' });
-      }
-      return handleReset_(body);
+    if(json.error){
+      return { ok:false, message: "O script respondeu com erro: " + json.error };
     }
-
-    if (body.action === 'createUser') {
-      if (session.papel !== ADMIN_ROLE) {
-        return jsonOutput({ error: 'Somente administradores podem criar usuários.' });
-      }
-      return handleCreateUser_(body);
-    }
-
-    if (body.action === 'listUsers') {
-      if (session.papel !== ADMIN_ROLE) {
-        return jsonOutput({ error: 'Somente administradores podem ver a lista de usuários.' });
-      }
-      return handleListUsers_();
-    }
-
-    if (body.action === 'deleteUser') {
-      if (session.papel !== ADMIN_ROLE) {
-        return jsonOutput({ error: 'Somente administradores podem remover usuários.' });
-      }
-      return handleDeleteUser_(body, session);
-    }
-
-    const key = body.key;
-    const sheetName = SHEET_MAP[key];
-    if (!sheetName) return jsonOutput({ error: 'chave inválida: ' + key });
-
-    const newArr = JSON.parse(body.value);
-
-    if (session.papel !== ADMIN_ROLE) {
-      const currentArr = readSheet(sheetName) || [];
-      const currentIds = currentArr.map(function (r) { return String(r.id); });
-      const newIds = newArr.map(function (r) { return String(r.id); });
-      const removed = currentIds.filter(function (id) { return newIds.indexOf(id) === -1; });
-      if (removed.length > 0) {
-        return jsonOutput({ error: 'Somente administradores podem excluir registros.' });
-      }
-    }
-
-    writeSheet(sheetName, newArr);
-
-    let calendarWarning = null;
-    try {
-      if (key === 'painel-atividades') {
-        syncActivitiesToCalendar_(newArr);
-      } else if (CALENDAR_LOG_CONFIG[key]) {
-        syncLogToCalendar_(key, newArr);
-      }
-    } catch (calErr) {
-      // Nunca deixa um problema na Agenda impedir o salvamento na planilha.
-      calendarWarning = String(calErr);
-    }
-
-    return jsonOutput({ ok: true, calendarWarning: calendarWarning });
-  } catch (err) {
-    return jsonOutput({ error: String(err) });
+    return { ok:true };
+  }catch(e){
+    return { ok:false, message:
+      "Falha ao conectar (" + (e && e.message ? e.message : e) + ").\n" +
+      "Confira se a URL está correta, termina em /exec, e se a implantação está com acesso \"Qualquer pessoa\"." };
   }
 }
 
-/**
- * Cria/atualiza um evento no Google Agenda (da conta usada para implantar
- * o script) para cada atividade do Painel Geral que tenha um prazo
- * preenchido. Usa uma "tag" no evento (painelId) para reconhecer eventos
- * já criados e atualizá-los, em vez de duplicar a cada salvamento.
- *
- * Permissões:
- * - Quem cria o evento (a conta do script) já é o organizador, com
- *   permissão total — isso é automático no Google Calendar.
- * - Os convidados (campo "emails" da atividade, separados por vírgula)
- *   recebem permissão de EDITAR o evento (setGuestsCanModify), mas o
- *   Google Calendar nunca permite que um convidado exclua o evento do
- *   calendário do organizador — eles só conseguem removê-lo da própria
- *   agenda. Ou seja, "editar sem excluir dados" já é o comportamento
- *   padrão do Google, não precisa ser simulado.
- *
- * ATENÇÃO — autorização única necessária:
- * Esta função usa o serviço CalendarApp, que precisa de uma permissão
- * que ainda não foi concedida ao script. Antes de usar, no editor do
- * Apps Script: selecione a função "autorizarAgenda" no menu suspenso ao
- * lado do botão "Executar", clique em Executar e aceite a tela de
- * permissão (Configurações avançadas > Acessar [projeto] (não seguro) >
- * Permitir). Depois disso, gere uma nova implantação (Gerenciar
- * implantações > editar > Nova versão) para o app da web passar a ter
- * essa permissão também.
- */
-function syncActivitiesToCalendar_(items) {
-  const cal = CalendarApp.getDefaultCalendar();
-  items.forEach(function (item) {
-    if (!item.prazo) return;
-    const id = String(item.id);
-    const title = '[Operacional] ' + item.title;
-    const date = new Date(item.prazo + 'T09:00:00');
-    if (isNaN(date.getTime())) return;
-    const end = new Date(date.getTime() + 30 * 60000);
-    const description = 'Área: ' + item.area + '\nStatus: ' + item.status +
-      '\nPróxima ação: ' + item.next + '\nResponsável: ' + item.responsavel;
-    const guestEmails = parseEmails_(item.emails);
+async function configureSheets(){
+  const current = APPS_SCRIPT_URL || '';
+  const url = prompt(
+    "Cole aqui a URL do seu Google Apps Script (termina em /exec).\n\nDeixe em branco e confirme para desligar a sincronização e voltar a salvar apenas dentro do Claude.",
+    current
+  );
+  if(url === null) return;
+  const trimmed = url.trim();
 
-    let ev = findEventByTag_(cal, 'painelId', id);
-    if (ev) {
-      ev.setTitle(title);
-      ev.setTime(date, end);
-      ev.setDescription(description);
-    } else {
-      ev = cal.createEvent(title, date, end, { description: description });
-      ev.setTag('painelId', id);
-    }
-
-    syncGuests_(ev, guestEmails);
-
-    ev.setGuestsCanModify(true);
-    ev.setGuestsCanInviteOthers(false);
-    ev.setGuestsCanSeeGuests(true);
-  });
-}
-
-function parseEmails_(str) {
-  if (!str) return [];
-  return String(str).split(/[,;]/)
-    .map(function (s) { return s.trim(); })
-    .filter(function (s) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s); });
-}
-
-function syncGuests_(ev, emails) {
-  const current = ev.getGuestList().map(function (g) { return g.getEmail(); });
-  emails.forEach(function (email) {
-    if (current.indexOf(email) === -1) {
-      ev.addGuest(email);
-    }
-  });
-}
-
-function findEventByTag_(cal, tagKey, tagValue) {
-  const now = new Date();
-  const start = new Date(now.getFullYear() - 1, 0, 1);
-  const end = new Date(now.getFullYear() + 2, 0, 1);
-  const events = cal.getEvents(start, end);
-  for (var i = 0; i < events.length; i++) {
-    if (events[i].getTag(tagKey) === tagValue) return events[i];
+  if(!trimmed){
+    await setAppsScriptUrl('');
+    APPS_SCRIPT_URL = null;
+    SESSION = null;
+    await setStoredSession(null);
+    updateSyncStatus();
+    await init(true);
+    return;
   }
-  return null;
+
+  if(!trimmed.startsWith('http')){
+    alert("Essa não parece ser uma URL válida. Verifique e tente novamente.");
+    return;
+  }
+
+  document.getElementById('syncStatus').textContent = "Testando conexão com o Google Sheets…";
+  const test = await testAppsScriptConnection(trimmed);
+  if(!test.ok){
+    alert("Não foi possível conectar ao Google Sheets:\n\n" + test.message);
+    updateSyncStatus();
+    return;
+  }
+
+  await setAppsScriptUrl(trimmed);
+  APPS_SCRIPT_URL = trimmed;
+  SESSION = null;
+  await setStoredSession(null);
+  updateSyncStatus();
+  await init(true);
 }
 
-/**
- * Configuração de como cada módulo (Roedores / Aves) vira evento na
- * Agenda: título e descrição são montados a partir dos campos de cada
- * registro. Cada registro precisa ter um campo "data" preenchido —
- * registros sem data são ignorados.
- */
-const CALENDAR_LOG_CONFIG = {
-  'log-roedores-nascimento': {
-    build: function (item) {
-      return {
-        title: '[Roedores] Nascimento — ' + (item.linhagem || 'sem linhagem'),
-        description: 'Quantidade: ' + (item.quantidade || '') +
-          '\nLinhagem/lote: ' + (item.linhagem || '') +
-          '\nObservação: ' + (item.obs || '')
-      };
-    }
-  },
-  'log-roedores-abate': {
-    build: function (item) {
-      return {
-        title: '[Roedores] Abate — ' + (item.linhagem || 'sem linhagem'),
-        description: 'Quantidade: ' + (item.quantidade || '') +
-          '\nLinhagem/lote: ' + (item.linhagem || '') +
-          '\nMotivo/destino: ' + (item.motivo || '')
-      };
-    }
-  },
-  'log-roedores-entrada': {
-    build: function (item) {
-      return {
-        title: '[Roedores] Entrada — ' + (item.linhagem || 'sem linhagem'),
-        description: 'Quantidade: ' + (item.quantidade || '') +
-          '\nLinhagem/lote: ' + (item.linhagem || '') +
-          '\nOrigem/fornecedor: ' + (item.origem || '')
-      };
-    }
-  },
-  'log-roedores-saida': {
-    build: function (item) {
-      return {
-        title: '[Roedores] Saída — ' + (item.linhagem || 'sem linhagem'),
-        description: 'Quantidade: ' + (item.quantidade || '') +
-          '\nLinhagem/lote: ' + (item.linhagem || '') +
-          '\nDestino: ' + (item.destino || '')
-      };
-    }
-  },
-  'log-aves-treinamento': {
-    build: function (item) {
-      return {
-        title: '[Aves] Treinamento — ' + (item.ave_id || 'sem identificação'),
-        description: 'Peso inicial: ' + (item.peso_inicial || '') + ' g' +
-          '\nPeso final: ' + (item.peso_final || '') + ' g' +
-          '\nAlimentação: ' + (item.alimentacao || '') +
-          '\nObservação: ' + (item.obs || '')
-      };
-    }
-  },
-  'log-aves-feedback': {
-    build: function (item) {
-      return {
-        title: '[Aves] Feedback — ' + (item.ave_id || 'geral'),
-        description: 'Responsável: ' + (item.responsavel || '') +
-          '\nFeedback: ' + (item.feedback || '')
-      };
+function updateSyncStatus(){
+  const el = document.getElementById('syncStatus');
+  if(APPS_SCRIPT_URL){
+    el.textContent = "Sincronizado com o Google Sheets";
+  }else{
+    el.textContent = "Salvando apenas dentro do Claude (Google Sheets não configurado)";
+  }
+}
+
+/* ---- Sessão de login (e-mail/senha) ---- */
+
+let SESSION = null; // { token, email, nome, papel }
+
+async function getStoredSession(){
+  try{
+    const res = await window.storage.get('session');
+    return res.value ? JSON.parse(res.value) : null;
+  }catch(e){
+    try{
+      const raw = localStorage.getItem('session');
+      return raw ? JSON.parse(raw) : null;
+    }catch(e2){
+      return window.__memSession || null;
     }
   }
-};
+}
 
-/**
- * Cria/atualiza um evento na Agenda para cada registro de Roedores/Aves
- * que tenha uma data preenchida. Mesma lógica de "tag" da função de
- * atividades: reconhece e atualiza o evento em vez de duplicar.
- */
-function syncLogToCalendar_(key, items) {
-  const cfg = CALENDAR_LOG_CONFIG[key];
-  if (!cfg) return;
-  const cal = CalendarApp.getDefaultCalendar();
-
-  items.forEach(function (item) {
-    if (!item.data) return;
-    const date = new Date(item.data + 'T09:00:00');
-    if (isNaN(date.getTime())) return;
-    const end = new Date(date.getTime() + 30 * 60000);
-    const tagValue = key + ':' + String(item.id);
-    const built = cfg.build(item);
-
-    let ev = findEventByTag_(cal, 'logTag', tagValue);
-    if (ev) {
-      ev.setTitle(built.title);
-      ev.setTime(date, end);
-      ev.setDescription(built.description);
-    } else {
-      ev = cal.createEvent(built.title, date, end, { description: built.description });
-      ev.setTag('logTag', tagValue);
+async function setStoredSession(session){
+  const raw = session ? JSON.stringify(session) : '';
+  try{
+    await window.storage.set('session', raw);
+  }catch(e){
+    try{
+      if(raw) localStorage.setItem('session', raw);
+      else localStorage.removeItem('session');
+    }catch(e2){
+      window.__memSession = session;
     }
-  });
-}
-
-/**
- * Rode esta função manualmente UMA VEZ pelo editor do Apps Script
- * (menu suspenso > autorizarAgenda > Executar) só para disparar a tela
- * de permissão da Agenda. Ela não faz nada além de acessar a agenda
- * padrão — é só para conceder a permissão de forma segura e visível.
- */
-function autorizarAgenda() {
-  const cal = CalendarApp.getDefaultCalendar();
-  Logger.log('Agenda autorizada: ' + cal.getName());
-}
-
-function getSheet_(name, createIfMissing) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(name);
-  if (!sheet && createIfMissing) {
-    sheet = ss.insertSheet(name);
   }
-  return sheet || null;
 }
 
-function readSheet(name) {
-  const sheet = getSheet_(name, false);
-  if (!sheet) return null;
+function showLogin(message){
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appRoot').style.display = 'none';
+  const errEl = document.getElementById('loginError');
+  if(errEl) errEl.textContent = message || '';
+}
 
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return [];
+function showApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+  updateUserInfo();
+  applyRolePermissions();
+}
 
-  const headers = values[0];
-  return values.slice(1)
-    .map(function (row) {
-      const obj = {};
-      headers.forEach(function (h, i) {
-        let v = row[i];
-        if (typeof v === 'string' && v !== '' && !isNaN(v) && !/^0[0-9]/.test(v)) {
-          v = Number(v);
-        }
-        obj[h] = v;
+function updateUserInfo(){
+  const el = document.getElementById('userInfo');
+  if(!el) return;
+  if(SESSION){
+    el.textContent = SESSION.nome + " · " + (SESSION.papel === 'adm' ? 'Administrador' : SESSION.papel);
+  }else{
+    el.textContent = '';
+  }
+}
+
+function applyRolePermissions(){
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const resetBtn = document.getElementById('resetBtn');
+  if(resetBtn) resetBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
+  const usersBtn = document.getElementById('usersBtn');
+  if(usersBtn) usersBtn.style.display = (APPS_SCRIPT_URL && isAdmin) ? '' : 'none';
+}
+
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+
+  if(!APPS_SCRIPT_URL){
+    errEl.textContent = "O Google Sheets não está configurado neste dashboard. Use \"Configurar Google Sheets\" primeiro.";
+    return;
+  }
+  if(!email || !password){
+    errEl.textContent = "Preencha e-mail e senha.";
+    return;
+  }
+
+  let res, json;
+  try{
+    res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'login', email:email, password:password })
+    });
+    json = await res.json();
+  }catch(e){
+    errEl.textContent = "Erro de conexão: " + (e.message || e);
+    return;
+  }
+  if(json.error){
+    errEl.textContent = json.error;
+    return;
+  }
+
+  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel };
+  await setStoredSession(SESSION);
+  showApp();
+  await init(true);
+}
+
+async function doLogout(){
+  SESSION = null;
+  await setStoredSession(null);
+  showLogin();
+}
+
+/* ---- Painel "Gerenciar usuários" (ADM) ---- */
+
+async function userApiCall(action, extra){
+  const body = Object.assign({ action: action, token: SESSION ? SESSION.token : '' }, extra || {});
+  let res, json;
+  try{
+    res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    });
+    json = await res.json();
+  }catch(e){
+    throw new Error('Erro de conexão: ' + (e.message || e));
+  }
+  if(json.error === 'unauthenticated'){
+    handleSessionExpired();
+    throw new Error('AUTH_EXPIRED');
+  }
+  if(json.error) throw new Error(json.error);
+  return json;
+}
+
+function openUserPanel(){
+  document.getElementById('userFormError').textContent = '';
+  document.getElementById('newUserNome').value = '';
+  document.getElementById('newUserEmail').value = '';
+  document.getElementById('newUserSenha').value = '';
+  document.getElementById('newUserPapel').value = 'editor';
+  document.getElementById('userModal').classList.add('active');
+  loadUsersList();
+}
+
+function closeUserPanel(){
+  document.getElementById('userModal').classList.remove('active');
+}
+
+async function loadUsersList(){
+  const container = document.getElementById('usersListContainer');
+  container.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Carregando…</p>';
+  try{
+    const json = await userApiCall('listUsers');
+    const users = json.users || [];
+    if(users.length === 0){
+      container.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum usuário cadastrado ainda.</p>';
+      return;
+    }
+    container.innerHTML = users.map(u => {
+      const isSelf = SESSION && SESSION.email && u.email.toLowerCase() === SESSION.email.toLowerCase();
+      const roleClass = u.papel === 'adm' ? 'u-role role-adm' : 'u-role';
+      const roleLabel = u.papel === 'adm' ? 'Administrador' : (u.papel || 'editor');
+      const delBtn = isSelf
+        ? '<span style="font-size:11px;color:var(--ink-soft);">(você)</span>'
+        : `<button class="rowdel" onclick="deleteUserAccount('${u.email.replace(/'/g,"\\'")}')">Remover</button>`;
+      return `
+        <div class="user-row">
+          <div class="u-info">
+            <span>${u.nome || '(sem nome)'}</span>
+            <span class="u-email">${u.email}</span>
+          </div>
+          <div style="display:flex;align-items:center;">
+            <span class="${roleClass}">${roleLabel}</span>
+            ${delBtn}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    container.innerHTML = '<p style="font-size:12.5px;color:var(--red);">Erro ao carregar usuários: ' + (e.message||e) + '</p>';
+  }
+}
+
+async function createUserAccount(){
+  const errEl = document.getElementById('userFormError');
+  errEl.textContent = '';
+
+  const nome = document.getElementById('newUserNome').value.trim();
+  const email = document.getElementById('newUserEmail').value.trim();
+  const senha = document.getElementById('newUserSenha').value;
+  const papel = document.getElementById('newUserPapel').value;
+
+  if(!nome || !email || !senha){
+    errEl.textContent = 'Preencha nome, e-mail e senha.';
+    return;
+  }
+  if(senha.length < 6){
+    errEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
+    return;
+  }
+
+  try{
+    await userApiCall('createUser', { nome: nome, email: email, password: senha, papel: papel });
+    document.getElementById('newUserNome').value = '';
+    document.getElementById('newUserEmail').value = '';
+    document.getElementById('newUserSenha').value = '';
+    document.getElementById('newUserPapel').value = 'editor';
+    await loadUsersList();
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    errEl.textContent = e.message || String(e);
+  }
+}
+
+async function deleteUserAccount(email){
+  if(!confirm('Remover o acesso de ' + email + '? Essa pessoa não vai mais conseguir entrar no dashboard.')) return;
+  try{
+    await userApiCall('deleteUser', { email: email });
+    await loadUsersList();
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    alert('Não foi possível remover: ' + (e.message || e));
+  }
+}
+
+function handleSessionExpired(){
+  SESSION = null;
+  setStoredSession(null);
+  showLogin("Sua sessão expirou. Faça login novamente.");
+}
+
+async function storageGet(key){
+  if(APPS_SCRIPT_URL){
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : ''));
+    }catch(e){
+      throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
+    }
+    if(!res.ok){
+      throw new Error('CONN_ERROR: servidor respondeu status ' + res.status);
+    }
+    try{
+      json = await res.json();
+    }catch(e){
+      throw new Error('CONN_ERROR: resposta não é JSON válido');
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      throw new Error('AUTH_EXPIRED');
+    }
+    if(json.error) throw new Error('CONN_ERROR: ' + json.error);
+    if(json.value === null || json.value === undefined) throw new Error('NOT_FOUND');
+    return { value: json.value };
+  }
+  return await window.storage.get(key);
+}
+
+async function storageSet(key, value){
+  if(APPS_SCRIPT_URL){
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'set', key: key, value: value, token: SESSION ? SESSION.token : '' })
       });
-      return obj;
-    })
-    .filter(function (obj) {
-      return Object.keys(obj).some(function (k) { return obj[k] !== '' && obj[k] !== null; });
-    });
+    }catch(e){
+      throw new Error('falha de rede/CORS: ' + (e.message||e));
+    }
+    if(!res.ok) throw new Error('servidor respondeu status ' + res.status);
+    try{
+      json = await res.json();
+    }catch(e){
+      throw new Error('resposta não é JSON válido');
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      throw new Error('AUTH_EXPIRED');
+    }
+    if(json.error) throw new Error(json.error);
+    return { calendarWarning: json.calendarWarning || null };
+  }
+  await window.storage.set(key, value);
+  return { calendarWarning: null };
 }
 
-function writeSheet(name, arr) {
-  const sheet = getSheet_(name, true);
-  sheet.clear();
-  if (!arr || arr.length === 0) return;
+async function loadData(){
+  try{
+    const res = await storageGet('painel-atividades');
+    data = JSON.parse(res.value);
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    if(APPS_SCRIPT_URL && String(e.message).startsWith('CONN_ERROR')){
+      data = [];
+      document.getElementById('lastUpdate').textContent =
+        "Não foi possível carregar do Google Sheets agora (" + e.message.replace('CONN_ERROR: ','') + "). Os dados não foram alterados na planilha.";
+      renderGeral();
+      return;
+    }
+    data = JSON.parse(JSON.stringify(SEED));
+    await save();
+  }
+  renderGeral();
+}
 
-  const headerSet = {};
-  arr.forEach(function (o) {
-    Object.keys(o).forEach(function (k) { headerSet[k] = true; });
-  });
-  const headers = Object.keys(headerSet);
-
-  const rows = arr.map(function (o) {
-    return headers.map(function (h) {
-      return (o[h] !== undefined && o[h] !== null) ? o[h] : '';
-    });
-  });
-
-  const totalRows = rows.length + 1;
-  sheet.getRange(1, 1, totalRows, headers.length).setNumberFormat('@');
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  if (rows.length) {
-    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+async function save(){
+  try{
+    const result = await storageSet('painel-atividades', JSON.stringify(data));
+    let msg = "Atualizado em " + new Date().toLocaleString('pt-BR');
+    if(result && result.calendarWarning){
+      msg += " · Planilha salva, mas a Agenda não sincronizou (" + result.calendarWarning + ")";
+    }
+    document.getElementById('lastUpdate').textContent = msg;
+  }catch(e){
+    document.getElementById('lastUpdate').textContent =
+      "Erro ao salvar (" + (e.message || e) + ") — alterações podem não persistir.";
   }
 }
 
-/**
- * Restaura os dados originais (semente) da aba Atividades e limpa todas
- * as abas de Roedores/Aves. Só é chamada quando doPost já confirmou que
- * a sessão pertence a um usuário com papel "adm".
- */
-function handleReset_(body) {
-  Object.keys(SHEET_MAP).forEach(function (key) {
-    const sheetName = SHEET_MAP[key];
-    if (key === 'painel-atividades' && body.seed) {
-      writeSheet(sheetName, JSON.parse(body.seed));
-    } else {
-      const sheet = getSheet_(sheetName, false);
-      if (sheet) sheet.clear();
+async function resetData(){
+  if(APPS_SCRIPT_URL){
+    if(!SESSION || SESSION.papel !== 'adm'){
+      alert("Somente administradores podem restaurar os dados.");
+      return;
     }
-  });
+    if(!confirm("Esta ação apaga os dados da PLANILHA COMPARTILHADA para TODAS AS PESSOAS que usam este dashboard. Não pode ser desfeita. Deseja continuar?")) return;
 
-  return jsonOutput({ ok: true });
+    let res, json;
+    try{
+      res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'reset', token: SESSION.token, seed: JSON.stringify(SEED) })
+      });
+      json = await res.json();
+    }catch(e){
+      alert("Erro ao tentar restaurar: " + (e.message || e));
+      return;
+    }
+    if(json.error === 'unauthenticated'){
+      handleSessionExpired();
+      return;
+    }
+    if(json.error){
+      alert("Não foi possível restaurar: " + json.error);
+      return;
+    }
+    alert("Dados restaurados com sucesso para todos.");
+    await init(true);
+    return;
+  }
+
+  if(!confirm("Restaurar os dados originais? Isso apaga as alterações feitas neste navegador.")) return;
+  data = JSON.parse(JSON.stringify(SEED));
+  await save();
+  for(const key of Object.keys(LOG_CONFIGS)){
+    logData[key] = [];
+    await saveLog(key);
+  }
+  renderGeral();
+  renderAllLogs();
 }
 
-/* =====================================================================
-   AUTENTICAÇÃO — usuários, senhas (com salt), sessões e login
-   ===================================================================== */
+function updateField(id, field, value){
+  const item = data.find(d=>d.id===id);
+  item[field] = value;
+  save();
+}
 
-/**
- * Calcula um hash SHA-256 de "salt:senha", em hexadecimal. Não é o
- * mesmo nível de proteção de bcrypt/scrypt, mas evita guardar senhas em
- * texto puro na planilha — suficiente para o uso interno deste painel.
- */
-function hashPassword_(password, salt) {
-  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + password);
-  return bytes.map(function (b) {
-    const v = (b < 0 ? b + 256 : b).toString(16);
-    return v.length === 1 ? '0' + v : v;
+function renderStats(){
+  const counts = {};
+  STAGES.forEach(s=>counts[s]=0);
+  data.forEach(d=>counts[d.status]++);
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat total"><div class="num">${data.length}</div><div class="lbl">Total de atividades</div></div>
+    ${STAGES.map(s=>`
+      <div class="stat ${STAT_CLASS[s]}">
+        <div class="num">${counts[s]}</div>
+        <div class="lbl">${s}</div>
+      </div>`).join('')}
+  `;
+}
+
+function renderFilters(){
+  const areas = ["Todas", ...Array.from(new Set(data.map(d=>d.area)))];
+  const el = document.getElementById('filters');
+  el.innerHTML = areas.map(a=>
+    `<button class="chip ${a===activeFilter?'active':''}" onclick="setFilter('${a}')">${a}</button>`
+  ).join('');
+}
+
+function setFilter(a){
+  activeFilter = a;
+  renderGeral();
+}
+
+function renderCards(){
+  const el = document.getElementById('cards');
+  const items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
+  el.innerHTML = items.map(item=>{
+    const stageIdx = STAGES.indexOf(item.status);
+    const color = STAGE_COLOR[item.status];
+    const segs = STAGES.map((s,i)=>{
+      const on = i<=stageIdx;
+      const isLast = i===stageIdx;
+      return `<div class="seg ${on?'on':''}" style="--stage-color:${color}">${isLast?'<div class="dot" style="--stage-color:'+color+'"></div>':''}</div>`;
+    }).join('');
+    return `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag">${item.area}</span>
+              <span class="card-title">${item.title}</span>
+            </div>
+            <div class="card-sub">Responsável: ${item.responsavel}</div>
+          </div>
+          <select class="status-select" onchange="updateStatus(${item.id}, this.value)" style="color:${color};border-color:${color}55">
+            ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="track">${segs}</div>
+        <div class="track-labels">${STAGES.map(s=>`<span>${s}</span>`).join('')}</div>
+
+        <div class="card-grid">
+          <div class="field">
+            <label>Próxima ação</label>
+            <textarea onchange="updateField(${item.id},'next',this.value)">${item.next}</textarea>
+          </div>
+          <div class="field">
+            <label>Prazo</label>
+            <input type="date" value="${item.prazo}" onchange="updateField(${item.id},'prazo',this.value)">
+          </div>
+          <div class="field">
+            <label>Indicador chave</label>
+            <div class="indic">${item.indicador}</div>
+          </div>
+        </div>
+        <div class="field field-emails">
+          <label>E-mails dos convidados (separados por vírgula) — recebem convite no Google Agenda com permissão de edição</label>
+          <input type="text" placeholder="ex: pessoa1@empresa.com, pessoa2@empresa.com"
+                 value="${item.emails || ''}"
+                 onchange="updateField(${item.id},'emails',this.value)">
+        </div>
+      </div>
+    `;
   }).join('');
 }
 
-function generateSalt_() {
-  return Utilities.getUuid();
+function updateStatus(id, value){
+  const item = data.find(d=>d.id===id);
+  item.status = value;
+  save();
+  renderGeral();
 }
 
-function generateToken_() {
-  return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+function renderGeral(){
+  renderStats();
+  renderFilters();
+  renderCards();
 }
 
-function getUsersSheet_() {
-  return getSheet_(USERS_SHEET, true);
+/* ===================== NAV: VIEWS E SUBVIEWS ===================== */
+
+function showView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.mainnav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-'+name).classList.add('active');
 }
 
-/** Procura um usuário pelo e-mail (case-insensitive). Retorna null se não achar. */
-function findUserByEmail_(email) {
-  const sheet = getUsersSheet_();
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return null;
+function showSub(module, name){
+  const prefix = 'sub-'+module+'-';
+  document.querySelectorAll('#view-'+module+' .subview').forEach(v=>v.classList.remove('active'));
+  document.getElementById(prefix+name).classList.add('active');
+  document.querySelectorAll('#view-'+module+' .subnav button').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
 
-  const headers = values[0];
-  const emailIdx = headers.indexOf('email');
-  if (emailIdx === -1) return null;
+/* ===================== MÓDULOS: ROEDORES E AVES (tabelas de registro) ===================== */
 
-  for (var i = 1; i < values.length; i++) {
-    if (String(values[i][emailIdx]).toLowerCase() === String(email).toLowerCase()) {
-      const obj = {};
-      headers.forEach(function (h, idx) { obj[h] = values[i][idx]; });
-      obj._row = i + 1;
-      return obj;
+const LOG_CONFIGS = {
+  'roedores-nascimento': {
+    container:'sub-roedores-nascimento',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'obs', label:'Observação', type:'text'}
+    ]
+  },
+  'roedores-abate': {
+    container:'sub-roedores-abate',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'motivo', label:'Motivo / destino', type:'text'}
+    ]
+  },
+  'roedores-entrada': {
+    container:'sub-roedores-entrada',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'origem', label:'Origem / fornecedor', type:'text'}
+    ]
+  },
+  'roedores-saida': {
+    container:'sub-roedores-saida',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'linhagem', label:'Linhagem / lote', type:'text'},
+      {key:'quantidade', label:'Quantidade', type:'number'},
+      {key:'destino', label:'Destino', type:'text'}
+    ]
+  },
+  'aves-treinamento': {
+    container:'sub-aves-treinamento',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'ave_id', label:'Identificação da ave', type:'text'},
+      {key:'peso_inicial', label:'Peso inicial (g)', type:'number'},
+      {key:'peso_final', label:'Peso final (g)', type:'number'},
+      {key:'alimentacao', label:'Alimentação', type:'text'},
+      {key:'obs', label:'Observação', type:'text'}
+    ]
+  },
+  'aves-feedback': {
+    container:'sub-aves-feedback',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'ave_id', label:'Identificação (opcional)', type:'text'},
+      {key:'responsavel', label:'Responsável', type:'text'},
+      {key:'feedback', label:'Feedback', type:'textarea'}
+    ]
+  }
+};
+
+let logData = {};
+
+async function loadLogData(key){
+  try{
+    const res = await storageGet('log-'+key);
+    logData[key] = JSON.parse(res.value);
+  }catch(e){
+    logData[key] = [];
+  }
+}
+
+async function saveLog(key){
+  try{
+    await storageSet('log-'+key, JSON.stringify(logData[key]));
+  }catch(e){
+    console.error('Erro ao salvar', key, e);
+  }
+}
+
+function inputHtml(col, rowId){
+  const idAttr = `data-field="${col.key}" data-row="${rowId}"`;
+  if(col.type === 'textarea'){
+    return `<textarea ${idAttr} onchange="editLogCell(this)"></textarea>`;
+  }
+  return `<input type="${col.type}" ${idAttr} onchange="editLogCell(this)">`;
+}
+
+function renderLogTable(key){
+  const cfg = LOG_CONFIGS[key];
+  const rows = logData[key] || [];
+  const container = document.getElementById(cfg.container);
+
+  const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
+
+  const canDelete = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
+
+  const bodyRows = rows.length ? rows.map(row=>{
+    const tds = cfg.cols.map(c=>{
+      const val = row[c.key] || '';
+      if(c.type==='textarea'){
+        return `<td><textarea onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)">${val}</textarea></td>`;
+      }
+      return `<td><input type="${c.type}" value="${val}" onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)"></td>`;
+    }).join('');
+    const delCell = canDelete
+      ? `<td><button class="rowdel" onclick="deleteLogRow('${key}',${row.id})">Remover</button></td>`
+      : `<td></td>`;
+    return `<tr>${tds}${delCell}</tr>`;
+  }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione abaixo.</td></tr>`;
+
+  const addCells = cfg.cols.map(c=>{
+    if(c.type==='textarea'){
+      return `<td><textarea id="new-${key}-${c.key}" placeholder="${c.label}"></textarea></td>`;
     }
-  }
-  return null;
+    return `<td><input type="${c.type}" id="new-${key}-${c.key}" placeholder="${c.label}"></td>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap">
+      <table class="logtable">
+        <thead><tr>${headCols}</tr></thead>
+        <tbody>
+          ${bodyRows}
+          <tr class="addrow">
+            ${addCells}
+            <td><button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="addLogRow('${key}')">Adicionar</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
-/**
- * Cria (ou atualiza, se o e-mail já existir) um usuário. Chamada pelas
- * funções "criarPrimeiroAdmin" e "criarNovoUsuario" mais abaixo — não é
- * exposta via doGet/doPost, só pode ser rodada manualmente pelo editor
- * do Apps Script.
- */
-function criarUsuario_(email, password, nome, papel) {
-  const sheet = getUsersSheet_();
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, 5).setValues([['email', 'nome', 'papel', 'salt', 'hash']]);
-    sheet.getRange(1, 1, sheet.getMaxRows(), 5).setNumberFormat('@');
-  }
-
-  const salt = generateSalt_();
-  const hash = hashPassword_(password, salt);
-  const existing = findUserByEmail_(email);
-
-  if (existing) {
-    sheet.getRange(existing._row, 1, 1, 5).setValues([[email, nome, papel, salt, hash]]);
-    Logger.log('Usuário atualizado: ' + email + ' (papel: ' + papel + ')');
-  } else {
-    sheet.appendRow([email, nome, papel, salt, hash]);
-    Logger.log('Usuário criado: ' + email + ' (papel: ' + papel + ')');
-  }
+function addLogRow(key){
+  const cfg = LOG_CONFIGS[key];
+  const newRow = {id: Date.now()};
+  let hasValue = false;
+  cfg.cols.forEach(c=>{
+    const el = document.getElementById(`new-${key}-${c.key}`);
+    const val = el.value;
+    if(val) hasValue = true;
+    newRow[c.key] = val;
+    el.value = '';
+  });
+  if(!hasValue) return;
+  logData[key].push(newRow);
+  saveLog(key);
+  renderLogTable(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
 }
 
-/**
- * PASSO A PASSO: edite o e-mail e a senha abaixo para os que você vai
- * usar, salve (Ctrl+S), selecione esta função no menu suspenso ao lado
- * de "Executar" e clique em Executar. Depois de rodar uma vez, pode
- * apagar a senha em texto puro daqui se quiser (o usuário já foi
- * salvo com hash na planilha).
- */
-function criarPrimeiroAdmin() {
-  criarUsuario_('seuemail@exemplo.com', 'TROQUE_ESTA_SENHA', 'Duílio', ADMIN_ROLE);
+function updateLogRow(key, id, field, value){
+  const row = logData[key].find(r=>r.id===id);
+  row[field] = value;
+  saveLog(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
 }
 
-/**
- * Use esta função como modelo para criar os demais usuários da equipe.
- * Edite os quatro valores, rode pelo editor (mesmo processo do
- * "criarPrimeiroAdmin"), e repita para cada pessoa nova — troque os
- * dados a cada execução.
- *
- * Papel "adm" = acesso total (inclusive excluir e restaurar dados).
- * Qualquer outro texto no papel (ex: "editor", "coordenador",
- * "colaborador") = pode ver e editar/adicionar, mas nunca excluir nem
- * restaurar — essa regra é fixa e verificada no servidor.
- */
-function criarNovoUsuario() {
-  criarUsuario_('pessoa@exemplo.com', 'SenhaTemporaria123', 'Nome da Pessoa', 'editor');
+function deleteLogRow(key, id){
+  if(APPS_SCRIPT_URL && (!SESSION || SESSION.papel !== 'adm')){
+    alert("Somente administradores podem excluir registros.");
+    return;
+  }
+  logData[key] = logData[key].filter(r=>r.id!==id);
+  saveLog(key);
+  renderLogTable(key);
+  if(key.startsWith('roedores-')) renderEstoque();
+  if(key === 'aves-treinamento') renderAvesWeightChart();
 }
 
-/**
- * Cria um usuário a partir do painel "Gerenciar usuários" do dashboard
- * (em vez de precisar editar código no Apps Script). Só é chamada
- * depois que doPost já confirmou que quem pediu é administrador.
- */
-function handleCreateUser_(body) {
-  const email = String(body.email || '').trim();
-  const password = String(body.password || '');
-  const nome = String(body.nome || '').trim();
-  const papel = String(body.papel || '').trim() || 'editor';
+/* ---- Gráficos simples (SVG, sem dependências externas) ---- */
 
-  if (!email || !password || !nome) {
-    return jsonOutput({ error: 'Preencha nome, e-mail e senha.' });
-  }
-  if (password.length < 6) {
-    return jsonOutput({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
-  }
-  if (findUserByEmail_(email)) {
-    return jsonOutput({ error: 'Já existe um usuário com esse e-mail.' });
-  }
-
-  criarUsuario_(email, password, nome, papel);
-  return jsonOutput({ ok: true });
+function formatDateShort(iso){
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d.getTime())) return iso;
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
 }
 
-/** Lista os usuários cadastrados (sem salt/hash) para o painel de administração. */
-function handleListUsers_() {
-  const sheet = getUsersSheet_();
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return jsonOutput({ ok: true, users: [] });
+function buildLineChartSVG(series, opts){
+  opts = opts || {};
+  const width = opts.width || 640;
+  const height = opts.height || 200;
+  const padL = 40, padR = 12, padT = 14, padB = 28;
 
-  const headers = values[0];
-  const emailIdx = headers.indexOf('email');
-  const nomeIdx = headers.indexOf('nome');
-  const papelIdx = headers.indexOf('papel');
+  const allPoints = series.reduce((acc,s)=>acc.concat(s.points), []);
+  if(allPoints.length === 0){
+    return '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Sem dados suficientes para o gráfico ainda.</p>';
+  }
 
-  const users = [];
-  for (var i = 1; i < values.length; i++) {
-    users.push({
-      email: values[i][emailIdx],
-      nome: values[i][nomeIdx],
-      papel: values[i][papelIdx]
+  const xs = allPoints.map(p=>p.x);
+  const ys = allPoints.map(p=>p.y);
+  const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+  const minY = Math.min(0, Math.min.apply(null, ys));
+  const maxY = Math.max(1, Math.max.apply(null, ys));
+
+  const xScale = x => padL + (maxX===minX ? 0 : (x-minX)/(maxX-minX)) * (width-padL-padR);
+  const yScale = y => height-padB - (maxY===minY ? 0 : (y-minY)/(maxY-minY)) * (height-padT-padB);
+  const zeroY = yScale(0);
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block;">`;
+  svg += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${width-padR}" y2="${zeroY.toFixed(1)}" stroke="#D8D6CC" stroke-width="1"/>`;
+  svg += `<text x="${padL-6}" y="${(zeroY+3).toFixed(1)}" font-size="9.5" text-anchor="end" fill="#8A8F98">0</text>`;
+  svg += `<text x="${padL-6}" y="${(padT+8).toFixed(1)}" font-size="9.5" text-anchor="end" fill="#8A8F98">${Math.round(maxY)}</text>`;
+
+  series.forEach(s=>{
+    const pts = s.points;
+    if(pts.length===0) return;
+    const path = pts.map((p,i)=> (i===0?'M':'L') + xScale(p.x).toFixed(1) + ',' + yScale(p.y).toFixed(1)).join(' ');
+    svg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2"/>`;
+    pts.forEach(p=>{
+      svg += `<circle cx="${xScale(p.x).toFixed(1)}" cy="${yScale(p.y).toFixed(1)}" r="3" fill="${s.color}"/>`;
     });
-  }
-  return jsonOutput({ ok: true, users: users });
-}
+  });
 
-/**
- * Remove um usuário pelo e-mail. Nunca deixa remover a própria conta
- * logada, nem remover o último administrador restante (pra evitar
- * ficar todo mundo trancado para fora do painel).
- */
-function handleDeleteUser_(body, session) {
-  const email = String(body.email || '').trim();
-  if (!email) return jsonOutput({ error: 'E-mail não informado.' });
-
-  if (email.toLowerCase() === String(session.email).toLowerCase()) {
-    return jsonOutput({ error: 'Você não pode remover seu próprio usuário.' });
-  }
-
-  const existing = findUserByEmail_(email);
-  if (!existing) return jsonOutput({ error: 'Usuário não encontrado.' });
-
-  if (String(existing.papel) === ADMIN_ROLE) {
-    const sheet = getUsersSheet_();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0];
-    const papelIdx = headers.indexOf('papel');
-    var adminCount = 0;
-    for (var i = 1; i < values.length; i++) {
-      if (String(values[i][papelIdx]) === ADMIN_ROLE) adminCount++;
-    }
-    if (adminCount <= 1) {
-      return jsonOutput({ error: 'Não é possível remover o único administrador.' });
+  const base = series[0].points;
+  const tickCount = Math.min(6, base.length);
+  if(tickCount>0){
+    const step = Math.max(1, Math.floor(base.length / tickCount));
+    for(let i=0;i<base.length;i+=step){
+      const p = base[i];
+      const label = p.tick ? formatDateShort(p.tick) : String(p.x);
+      svg += `<text x="${xScale(p.x).toFixed(1)}" y="${height-8}" font-size="9.5" text-anchor="middle" fill="#8A8F98">${label}</text>`;
     }
   }
-
-  getUsersSheet_().deleteRow(existing._row);
-  return jsonOutput({ ok: true });
+  svg += `</svg>`;
+  return svg;
 }
 
-/** Login: valida e-mail/senha e devolve um token de sessão válido por 6h. */
-function handleLogin_(body) {
-  const email = String(body.email || '').trim();
-  const password = String(body.password || '');
+function renderEstoque(){
+  const container = document.getElementById('sub-roedores-estoque');
+  const nasc = logData['roedores-nascimento'] || [];
+  const ent = logData['roedores-entrada'] || [];
+  const aba = logData['roedores-abate'] || [];
+  const sai = logData['roedores-saida'] || [];
 
-  const user = findUserByEmail_(email);
-  if (!user) {
-    return jsonOutput({ error: 'E-mail ou senha inválidos.' });
+  const linhagens = new Set();
+  [nasc,ent,aba,sai].forEach(arr=>arr.forEach(r=>{ if(r.linhagem) linhagens.add(r.linhagem); }));
+
+  const sum = (arr, linhagem) => arr
+    .filter(r=> linhagem==null ? true : r.linhagem===linhagem)
+    .reduce((acc,r)=> acc + (parseFloat(r.quantidade)||0), 0);
+
+  const totalNasc = sum(nasc), totalEnt = sum(ent), totalAba = sum(aba), totalSai = sum(sai);
+  const totalEstoque = totalNasc + totalEnt - totalAba - totalSai;
+
+  const rows = Array.from(linhagens).sort().map(l=>{
+    const n = sum(nasc,l), e = sum(ent,l), a = sum(aba,l), s = sum(sai,l);
+    const estoque = n + e - a - s;
+    return `<tr>
+      <td>${l}</td><td>${n}</td><td>${e}</td><td>${a}</td><td>${s}</td>
+      <td style="font-weight:700">${estoque}</td>
+    </tr>`;
+  }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum registro com linhagem/lote informado ainda.</td></tr>`;
+
+  const events = [];
+  nasc.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
+  ent.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
+  aba.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
+  sai.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
+  events.sort((a,b)=> new Date(a.data) - new Date(b.data));
+  let running = 0;
+  const stockPoints = events.map((e,i)=>{ running += e.delta; return { x:i, y:running, tick:e.data }; });
+  const stockChart = buildLineChartSVG([{ label:'Estoque', color:'#2E6DA4', points: stockPoints }]);
+
+  container.innerHTML = `
+    <div class="estoque-summary">
+      <div class="stat total"><div class="num">${totalEstoque}</div><div class="lbl">Estoque atual total</div></div>
+      <div class="stat s-concl"><div class="num">${totalNasc}</div><div class="lbl">Total nascimentos</div></div>
+      <div class="stat s-exec"><div class="num">${totalEnt}</div><div class="lbl">Total entradas</div></div>
+      <div class="stat s-atraso"><div class="num">${totalAba}</div><div class="lbl">Total abates</div></div>
+      <div class="stat s-plan"><div class="num">${totalSai}</div><div class="lbl">Total saídas</div></div>
+    </div>
+    <div class="logtable-wrap" style="margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução do estoque ao longo do tempo</div>
+      ${stockChart}
+    </div>
+    <div class="logtable-wrap">
+      <table class="logtable">
+        <thead>
+          <tr><th>Linhagem / lote</th><th>Nascimentos</th><th>Entradas</th><th>Abates</th><th>Saídas</th><th>Estoque atual</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderAllLogs(){
+  for(const key of Object.keys(LOG_CONFIGS)){
+    if(key !== 'estoque'){
+      renderLogTable(key);
+    }
+  }
+  renderEstoque();
+  renderAvesWeightChart();
+}
+
+function renderAvesWeightChart(){
+  const container = document.getElementById('sub-aves-treinamento');
+  const existing = document.getElementById('aves-chart-block');
+  if(existing) existing.remove();
+
+  const items = (logData['aves-treinamento'] || [])
+    .filter(r => r.data)
+    .sort((a,b) => new Date(a.data) - new Date(b.data));
+
+  const chartHtml = items.length === 0
+    ? `<div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
+         <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Adicione registros de treinamento com data e pesos para ver o gráfico de evolução.</p>
+       </div>`
+    : (() => {
+        const series = [
+          { label:'Peso inicial (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) },
+          { label:'Peso final (g)', color:'#3E8760', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_final)||0, tick:r.data })) }
+        ];
+        const svg = buildLineChartSVG(series);
+        return `
+          <div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução de peso por sessão de treinamento</div>
+            ${svg}
+            <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft);">
+              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>Peso inicial</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#3E8760;border-radius:2px;margin-right:5px;"></span>Peso final</span>
+            </div>
+          </div>
+        `;
+      })();
+
+  container.insertAdjacentHTML('beforeend', chartHtml);
+}
+
+/* ===================== INIT ===================== */
+
+async function init(skipUrlReload){
+  if(!skipUrlReload){
+    APPS_SCRIPT_URL = await getAppsScriptUrl();
+  }
+  updateSyncStatus();
+
+  if(!APPS_SCRIPT_URL){
+    // Sem Google Sheets configurado: modo local dentro do Claude, sem exigir login.
+    showApp();
+    await loadData();
+    for(const key of Object.keys(LOG_CONFIGS)){
+      await loadLogData(key);
+    }
+    renderAllLogs();
+    return;
   }
 
-  const hash = hashPassword_(password, user.salt);
-  if (hash !== user.hash) {
-    return jsonOutput({ error: 'E-mail ou senha inválidos.' });
+  if(!skipUrlReload){
+    SESSION = await getStoredSession();
+  }
+  if(!SESSION || !SESSION.token){
+    showLogin();
+    return;
   }
 
-  const token = generateToken_();
-  const session = { email: user.email, nome: user.nome, papel: user.papel };
-  CacheService.getScriptCache().put('session_' + token, JSON.stringify(session), SESSION_TTL_SECONDS);
-
-  return jsonOutput({ ok: true, token: token, nome: user.nome, papel: user.papel });
-}
-
-/** Recupera a sessão associada a um token, ou null se inválida/expirada. */
-function getSession_(token) {
-  if (!token) return null;
-  const raw = CacheService.getScriptCache().get('session_' + token);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    return null;
+  showApp();
+  await loadData();
+  if(!SESSION){
+    // A sessão pode ter expirado durante o carregamento das atividades.
+    return;
   }
+  for(const key of Object.keys(LOG_CONFIGS)){
+    await loadLogData(key);
+  }
+  renderAllLogs();
 }
 
-function jsonOutput(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+init();
+</script>
+</body>
+</html>
