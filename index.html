@@ -681,19 +681,14 @@
   <div class="modal-card">
     <button class="modal-close" onclick="closeNewTabModal()">&times;</button>
     <h2>Nova aba</h2>
-    <p class="modal-sub">Cria uma aba própria com uma tabela de registros, igual às de Roedores/Aves. Cada aba vira uma planilha nova, sincronizada automaticamente.</p>
+    <p class="modal-sub">Cria uma nova aba com o mesmo formato do Operacional: estatísticas, filtros por área, status e prazo. Sincroniza com a planilha e a Agenda automaticamente.</p>
 
     <div class="modal-form-grid">
       <div class="full">
         <label>Nome da aba</label>
-        <input type="text" id="newTabNome" placeholder="ex: Controle de Insumos">
-      </div>
-      <div class="full">
-        <label>Campos da tabela (separados por vírgula)</label>
-        <input type="text" id="newTabCampos" placeholder="ex: Data, Item, Quantidade, Responsável, Observação">
+        <input type="text" id="newTabNome" placeholder="ex: Comercial" onkeydown="if(event.key==='Enter') submitNewTab()">
       </div>
     </div>
-    <p class="modal-sub" style="margin:0 0 10px;">Dica: um campo chamado exatamente "Data" vira um seletor de data, e cria eventos na Agenda automaticamente. Campos com "quantidade", "peso" ou "valor" no nome viram numéricos; os demais viram texto.</p>
     <p class="modal-error" id="newTabError"></p>
     <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="submitNewTab()">Criar aba</button>
   </div>
@@ -1358,7 +1353,10 @@ function setFilter(a){
 
 /* ---- Nova atividade (Painel Geral) ---- */
 
-function openNewActivityModal(){
+let activeActivityBoardKey = 'geral';
+
+function openNewActivityModal(boardKey){
+  activeActivityBoardKey = boardKey || 'geral';
   document.getElementById('newActError').textContent = '';
   document.getElementById('newActArea').value = '';
   document.getElementById('newActResponsavel').value = '';
@@ -1408,16 +1406,29 @@ async function submitNewActivity(){
     emails: emails
   };
 
-  data.push(newItem);
-  await save();
+  if(activeActivityBoardKey === 'geral'){
+    data.push(newItem);
+    await save();
+    activeFilter = 'Todas';
+    renderGeral();
+  }else{
+    if(!logData[activeActivityBoardKey]) logData[activeActivityBoardKey] = [];
+    logData[activeActivityBoardKey].push(newItem);
+    await saveLog(activeActivityBoardKey);
+    activityBoardFilters[activeActivityBoardKey] = 'Todas';
+    renderActivityBoard(activeActivityBoardKey);
+  }
+
   closeNewActivityModal();
-  activeFilter = 'Todas';
-  renderGeral();
 }
 
 /* ---- Abas personalizadas (criadas pelo botão "+ Nova aba") ---- */
+/* Toda aba nova é um "quadro de atividades" igual ao Operacional (estatísticas,
+   filtros por área, status, prazo). O tipo antigo (tabela de campos livres)
+   continua funcional para abas já existentes criadas antes dessa mudança. */
 
 let customTabsRegistry = [];
+let activityBoardFilters = {};
 
 function slugify(text){
   return String(text).toLowerCase()
@@ -1450,7 +1461,6 @@ async function saveTabsRegistry(){
 function openNewTabModal(){
   document.getElementById('newTabError').textContent = '';
   document.getElementById('newTabNome').value = '';
-  document.getElementById('newTabCampos').value = '';
   document.getElementById('newTabModal').classList.add('active');
 }
 
@@ -1463,20 +1473,13 @@ async function submitNewTab(){
   errEl.textContent = '';
 
   const nome = document.getElementById('newTabNome').value.trim();
-  const camposRaw = document.getElementById('newTabCampos').value.trim();
-  if(!nome || !camposRaw){
-    errEl.textContent = 'Preencha o nome da aba e ao menos um campo.';
-    return;
-  }
-  const campos = camposRaw.split(',').map(s=>s.trim()).filter(Boolean);
-  if(campos.length === 0){
-    errEl.textContent = 'Informe ao menos um campo, separado por vírgula.';
+  if(!nome){
+    errEl.textContent = 'Preencha o nome da aba.';
     return;
   }
 
-  const cols = campos.map(buildColumnDef);
   const key = 'custom-' + Date.now();
-  const tabDef = { key: key, label: nome, columns: JSON.stringify(cols) };
+  const tabDef = { key: key, label: nome, type: 'activity' };
 
   customTabsRegistry.push(tabDef);
   try{
@@ -1487,14 +1490,127 @@ async function submitNewTab(){
     return;
   }
 
-  mountCustomTab(tabDef);
+  mountActivityBoard(tabDef);
   logData[key] = [];
-  renderLogTable(key);
+  activityBoardFilters[key] = 'Todas';
+  renderActivityBoard(key);
   closeNewTabModal();
   showView(key);
 }
 
-/** Cria os elementos de navegação e tabela de uma aba personalizada, e a registra em LOG_CONFIGS. */
+/** Cria a navegação e a estrutura (stats + filtros + cards) de uma aba-quadro-de-atividades. */
+function mountActivityBoard(tabDef){
+  if(document.getElementById('view-' + tabDef.key)) return;
+
+  const nav = document.getElementById('mainnav');
+  const addBtn = document.getElementById('nav-add-tab');
+  const btn = document.createElement('button');
+  btn.id = 'nav-' + tabDef.key;
+  btn.textContent = tabDef.label;
+  btn.onclick = function(){ showView(tabDef.key); };
+  nav.insertBefore(btn, addBtn);
+
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const canManage = !APPS_SCRIPT_URL || isAdmin;
+  const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const newActivityBtnHtml = canManage
+    ? `<button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="openNewActivityModal('${tabDef.key}')">+ Nova atividade</button>`
+    : '';
+  const deleteTabBtn = canManage
+    ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
+    : '';
+
+  const wrap = document.querySelector('.wrap');
+  const view = document.createElement('div');
+  view.className = 'view';
+  view.id = 'view-' + tabDef.key;
+  view.innerHTML =
+    '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
+    '<p>Aba personalizada</p></div>' +
+    '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
+    '<div class="stats" id="stats-' + tabDef.key + '"></div>' +
+    '<div class="filters-row">' +
+      '<div class="filters" id="filters-' + tabDef.key + '"></div>' +
+      newActivityBtnHtml +
+    '</div>' +
+    '<div class="cards" id="cards-' + tabDef.key + '"></div>';
+  wrap.appendChild(view);
+}
+
+function renderActivityBoard(key){
+  renderActivityBoardStats(key);
+  renderActivityBoardFilters(key);
+  renderActivityBoardCards(key);
+}
+
+function renderActivityBoardStats(key){
+  const items = logData[key] || [];
+  const counts = {};
+  STAGES.forEach(s=>counts[s]=0);
+  items.forEach(d=>{ if(counts[d.status] !== undefined) counts[d.status]++; });
+  const el = document.getElementById('stats-' + key);
+  if(!el) return;
+  el.innerHTML = `
+    <div class="stat total"><div class="num">${items.length}</div><div class="lbl">Total de atividades</div></div>
+    ${STAGES.map(s=>`
+      <div class="stat ${STAT_CLASS[s]}">
+        <div class="num">${counts[s]}</div>
+        <div class="lbl">${s}</div>
+      </div>`).join('')}
+  `;
+}
+
+function renderActivityBoardFilters(key){
+  const items = logData[key] || [];
+  const uniqueAreas = Array.from(new Set(items.map(d=>d.area).filter(Boolean)));
+  const areas = ["Todas", ...uniqueAreas];
+  const current = activityBoardFilters[key] || 'Todas';
+  const el = document.getElementById('filters-' + key);
+  if(!el) return;
+  el.innerHTML = areas.map(a=>
+    `<button class="chip ${a===current?'active':''}" onclick="setActivityBoardFilter('${key}','${a.replace(/'/g,"\\'")}')">${a}</button>`
+  ).join('');
+}
+
+function setActivityBoardFilter(key, area){
+  activityBoardFilters[key] = area;
+  renderActivityBoard(key);
+}
+
+function renderActivityBoardCards(key){
+  const el = document.getElementById('cards-' + key);
+  if(!el) return;
+  const items = logData[key] || [];
+  const filter = activityBoardFilters[key] || 'Todas';
+  const filtered = filter === "Todas" ? items : items.filter(d=>d.area===filter);
+  el.innerHTML = filtered.map(item => buildActivityCardHtml(item, key)).join('');
+}
+
+async function updateActivityBoardStatus(key, id, value){
+  const item = (logData[key]||[]).find(d=>d.id===id);
+  if(!item) return;
+  item.status = value;
+  await saveLog(key);
+  renderActivityBoard(key);
+}
+
+async function updateActivityBoardField(key, id, field, value){
+  const item = (logData[key]||[]).find(d=>d.id===id);
+  if(!item) return;
+  item[field] = value;
+  await saveLog(key);
+}
+
+async function deleteActivityBoardItem(key, id){
+  const item = (logData[key]||[]).find(d=>d.id===id);
+  if(!item) return;
+  if(!confirm('Remover a atividade "' + item.title + '"? Essa ação não pode ser desfeita.')) return;
+  logData[key] = (logData[key]||[]).filter(d=>d.id!==id);
+  await saveLog(key);
+  renderActivityBoard(key);
+}
+
+/** Cria os elementos de navegação e tabela de uma aba antiga (campos livres) — mantido por compatibilidade. */
 function mountCustomTab(tabDef){
   if(LOG_CONFIGS[tabDef.key]) return;
 
@@ -1545,6 +1661,7 @@ async function deleteCustomTab(tabKey, label){
   customTabsRegistry = customTabsRegistry.filter(t => t.key !== tabKey);
   delete LOG_CONFIGS[tabKey];
   delete logData[tabKey];
+  delete activityBoardFilters[tabKey];
 
   const navBtn = document.getElementById('nav-' + tabKey);
   if(navBtn) navBtn.remove();
@@ -1554,7 +1671,7 @@ async function deleteCustomTab(tabKey, label){
   showView('geral');
 }
 
-/* ---- "Novo registro" (modal), equivalente à "Nova atividade" mas para abas dinâmicas ---- */
+/* ---- "Novo registro" (modal) — mantido para abas antigas (campos livres) ---- */
 
 let activeRecordTabKey = null;
 
@@ -1622,71 +1739,88 @@ async function submitNewRecord(){
 async function loadAndMountCustomTabs(){
   await loadTabsRegistry();
   for(const tabDef of customTabsRegistry){
-    mountCustomTab(tabDef);
-    await loadLogData(tabDef.key);
-    renderLogTable(tabDef.key);
+    if(tabDef.type === 'activity'){
+      mountActivityBoard(tabDef);
+      await loadLogData(tabDef.key);
+      activityBoardFilters[tabDef.key] = activityBoardFilters[tabDef.key] || 'Todas';
+      renderActivityBoard(tabDef.key);
+    }else{
+      mountCustomTab(tabDef);
+      await loadLogData(tabDef.key);
+      renderLogTable(tabDef.key);
+    }
   }
+}
+
+function buildActivityCardHtml(item, boardKey){
+  const stageIdx = STAGES.indexOf(item.status);
+  const color = STAGE_COLOR[item.status];
+  const segs = STAGES.map((s,i)=>{
+    const on = i<=stageIdx;
+    const isLast = i===stageIdx;
+    return `<div class="seg ${on?'on':''}" style="--stage-color:${color}">${isLast?'<div class="dot" style="--stage-color:'+color+'"></div>':''}</div>`;
+  }).join('');
+
+  const isGeral = boardKey === 'geral';
+  const canDelete = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
+  const statusHandler = isGeral ? `updateStatus(${item.id}, this.value)` : `updateActivityBoardStatus('${boardKey}', ${item.id}, this.value)`;
+  const nextHandler = isGeral ? `updateField(${item.id},'next',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'next',this.value)`;
+  const prazoHandler = isGeral ? `updateField(${item.id},'prazo',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'prazo',this.value)`;
+  const emailsHandler = isGeral ? `updateField(${item.id},'emails',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'emails',this.value)`;
+  const deleteHandler = isGeral ? `deleteActivity(${item.id})` : `deleteActivityBoardItem('${boardKey}', ${item.id})`;
+  const deleteBtn = canDelete
+    ? `<button class="rowdel" style="margin-top:6px;" onclick="${deleteHandler}">Remover atividade</button>`
+    : '';
+
+  return `
+    <div class="card">
+      <div class="card-top">
+        <div>
+          <div class="card-title-row">
+            <span class="area-tag">${item.area}</span>
+            <span class="card-title">${item.title}</span>
+          </div>
+          <div class="card-sub">Responsável: ${item.responsavel}</div>
+        </div>
+        <div style="text-align:right;">
+          <select class="status-select" onchange="${statusHandler}" style="color:${color};border-color:${color}55">
+            ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+          ${deleteBtn}
+        </div>
+      </div>
+
+      <div class="track">${segs}</div>
+      <div class="track-labels">${STAGES.map(s=>`<span>${s}</span>`).join('')}</div>
+
+      <div class="card-grid">
+        <div class="field">
+          <label>Próxima ação</label>
+          <textarea onchange="${nextHandler}">${item.next}</textarea>
+        </div>
+        <div class="field">
+          <label>Prazo</label>
+          <input type="date" value="${item.prazo}" onchange="${prazoHandler}">
+        </div>
+        <div class="field">
+          <label>Indicador chave</label>
+          <div class="indic">${item.indicador}</div>
+        </div>
+      </div>
+      <div class="field field-emails">
+        <label>E-mails dos convidados (separados por vírgula) — recebem convite no Google Agenda com permissão de edição</label>
+        <input type="text" placeholder="ex: pessoa1@empresa.com, pessoa2@empresa.com"
+               value="${item.emails || ''}"
+               onchange="${emailsHandler}">
+      </div>
+    </div>
+  `;
 }
 
 function renderCards(){
   const el = document.getElementById('cards');
   const items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
-  const canDeleteActivity = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
-  el.innerHTML = items.map(item=>{
-    const stageIdx = STAGES.indexOf(item.status);
-    const color = STAGE_COLOR[item.status];
-    const segs = STAGES.map((s,i)=>{
-      const on = i<=stageIdx;
-      const isLast = i===stageIdx;
-      return `<div class="seg ${on?'on':''}" style="--stage-color:${color}">${isLast?'<div class="dot" style="--stage-color:'+color+'"></div>':''}</div>`;
-    }).join('');
-    const deleteBtn = canDeleteActivity
-      ? `<button class="rowdel" style="margin-top:6px;" onclick="deleteActivity(${item.id})">Remover atividade</button>`
-      : '';
-    return `
-      <div class="card">
-        <div class="card-top">
-          <div>
-            <div class="card-title-row">
-              <span class="area-tag">${item.area}</span>
-              <span class="card-title">${item.title}</span>
-            </div>
-            <div class="card-sub">Responsável: ${item.responsavel}</div>
-          </div>
-          <div style="text-align:right;">
-            <select class="status-select" onchange="updateStatus(${item.id}, this.value)" style="color:${color};border-color:${color}55">
-              ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
-            </select>
-            ${deleteBtn}
-          </div>
-        </div>
-
-        <div class="track">${segs}</div>
-        <div class="track-labels">${STAGES.map(s=>`<span>${s}</span>`).join('')}</div>
-
-        <div class="card-grid">
-          <div class="field">
-            <label>Próxima ação</label>
-            <textarea onchange="updateField(${item.id},'next',this.value)">${item.next}</textarea>
-          </div>
-          <div class="field">
-            <label>Prazo</label>
-            <input type="date" value="${item.prazo}" onchange="updateField(${item.id},'prazo',this.value)">
-          </div>
-          <div class="field">
-            <label>Indicador chave</label>
-            <div class="indic">${item.indicador}</div>
-          </div>
-        </div>
-        <div class="field field-emails">
-          <label>E-mails dos convidados (separados por vírgula) — recebem convite no Google Agenda com permissão de edição</label>
-          <input type="text" placeholder="ex: pessoa1@empresa.com, pessoa2@empresa.com"
-                 value="${item.emails || ''}"
-                 onchange="updateField(${item.id},'emails',this.value)">
-        </div>
-      </div>
-    `;
-  }).join('');
+  el.innerHTML = items.map(item => buildActivityCardHtml(item, 'geral')).join('');
 }
 
 function updateStatus(id, value){
