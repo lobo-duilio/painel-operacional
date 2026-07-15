@@ -699,6 +699,18 @@
   </div>
 </div>
 
+<div id="newRecordModal" class="modal-overlay">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeNewRecordModal()">&times;</button>
+    <h2 id="newRecordModalTitle">Novo registro</h2>
+    <p class="modal-sub">Preencha os campos abaixo para adicionar um novo registro a esta aba.</p>
+
+    <div class="modal-form-grid" id="newRecordFields"></div>
+    <p class="modal-error" id="newRecordError"></p>
+    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="submitNewRecord()">Adicionar registro</button>
+  </div>
+</div>
+
 <div class="wrap" id="appRoot" style="display:none;">
 
   <div class="topbar">
@@ -1500,6 +1512,7 @@ function mountCustomTab(tabDef){
   const isAdmin = !!(SESSION && SESSION.papel === 'adm');
   const canDeleteTab = !APPS_SCRIPT_URL || isAdmin;
   const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const newRecordBtn = `<button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="openNewRecordModal('${tabDef.key}','${safeLabel}')">+ Novo registro</button>`;
   const deleteTabBtn = canDeleteTab
     ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
     : '';
@@ -1510,7 +1523,8 @@ function mountCustomTab(tabDef){
   view.id = 'view-' + tabDef.key;
   view.innerHTML =
     '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
-    '<p>Aba personalizada</p></div>' + deleteTabBtn + '</div>' +
+    '<p>Aba personalizada</p></div>' +
+    '<div style="display:flex;gap:8px;">' + newRecordBtn + deleteTabBtn + '</div></div>' +
     '<div id="sub-' + tabDef.key + '"></div>';
   wrap.appendChild(view);
 }
@@ -1538,6 +1552,71 @@ async function deleteCustomTab(tabKey, label){
   if(viewEl) viewEl.remove();
 
   showView('geral');
+}
+
+/* ---- "Novo registro" (modal), equivalente à "Nova atividade" mas para abas dinâmicas ---- */
+
+let activeRecordTabKey = null;
+
+function fieldInputHtml(col){
+  const idAttr = `id="newRecField_${col.key}"`;
+  const wrapClass = col.type === 'text' ? 'full' : '';
+  let inputHtml;
+  if(col.type === 'date'){
+    inputHtml = `<input type="date" ${idAttr}>`;
+  }else if(col.type === 'number'){
+    inputHtml = `<input type="number" step="any" ${idAttr}>`;
+  }else{
+    inputHtml = `<input type="text" ${idAttr} placeholder="${col.label}">`;
+  }
+  return `<div class="${wrapClass}"><label>${col.label}</label>${inputHtml}</div>`;
+}
+
+function openNewRecordModal(tabKey, label){
+  activeRecordTabKey = tabKey;
+  document.getElementById('newRecordModalTitle').textContent = 'Novo registro — ' + label;
+  document.getElementById('newRecordError').textContent = '';
+
+  const cfg = LOG_CONFIGS[tabKey];
+  const fieldsEl = document.getElementById('newRecordFields');
+  fieldsEl.innerHTML = cfg.cols.map(fieldInputHtml).join('');
+
+  document.getElementById('newRecordModal').classList.add('active');
+}
+
+function closeNewRecordModal(){
+  document.getElementById('newRecordModal').classList.remove('active');
+  activeRecordTabKey = null;
+}
+
+async function submitNewRecord(){
+  const errEl = document.getElementById('newRecordError');
+  errEl.textContent = '';
+  if(!activeRecordTabKey){
+    errEl.textContent = 'Nenhuma aba selecionada.';
+    return;
+  }
+
+  const cfg = LOG_CONFIGS[activeRecordTabKey];
+  const newRow = { id: Date.now() };
+  let hasValue = false;
+  cfg.cols.forEach(col => {
+    const el = document.getElementById('newRecField_' + col.key);
+    const val = el ? el.value : '';
+    if(val) hasValue = true;
+    newRow[col.key] = val;
+  });
+
+  if(!hasValue){
+    errEl.textContent = 'Preencha ao menos um campo.';
+    return;
+  }
+
+  if(!logData[activeRecordTabKey]) logData[activeRecordTabKey] = [];
+  logData[activeRecordTabKey].push(newRow);
+  await saveLog(activeRecordTabKey);
+  renderLogTable(activeRecordTabKey);
+  closeNewRecordModal();
 }
 
 async function loadAndMountCustomTabs(){
