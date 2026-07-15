@@ -1,6 +1,6 @@
 {
-  "name": "Painel Operacional",
-  "short_name": "Painel Op.",
+  "name": "Dashboard Operacional",
+  "short_name": "Dashboard Op.",
   "description": "Painel de gestão operacional — atividades, roedores e aves.",
   "start_url": "./index.html",
   "scope": "./",
