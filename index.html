@@ -818,14 +818,17 @@
     <div class="module-header">
       <div>
         <h2>Operacional II (Coordenação)</h2>
-        <p>Checklist veicular</p>
+        <p>Checklist veicular — resultados</p>
       </div>
+      <a class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);text-decoration:none;"
+         href="https://docs.google.com/forms/d/e/1FAIpQLSefF_ISgbUfz7ilIuKu3BzDv4IOzaCKuCCsH7TEdFANC-vDbw/viewform?usp=header"
+         target="_blank" rel="noopener">Preencher novo checklist</a>
     </div>
     <div class="subnav">
       <button class="active" onclick="void(0)">Checklist veicular</button>
     </div>
-    <div class="embed-wrap">
-      <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSefF_ISgbUfz7ilIuKu3BzDv4IOzaCKuCCsH7TEdFANC-vDbw/viewform?usp=header&embedded=true" loading="lazy" referrerpolicy="no-referrer-when-downgrade">Carregando…</iframe>
+    <div id="checklist-results-container">
+      <p style="font-size:12.5px;color:var(--ink-soft);">Carregando respostas…</p>
     </div>
   </div>
 
@@ -2241,6 +2244,50 @@ const LOG_CONFIGS = {
 };
 
 let logData = {};
+let checklistResponses = [];
+
+/**
+ * Mostra as respostas do formulário "Checklist Veicular" como uma
+ * tabela somente-leitura (os dados vêm direto da aba de respostas do
+ * Google Forms, vinculada à planilha). Não tem edição por aqui —
+ * quem preenche o checklist usa o link "Preencher novo checklist".
+ */
+function renderChecklistResults(){
+  const container = document.getElementById('checklist-results-container');
+  if(!container) return;
+
+  if(checklistResponses === null){
+    container.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Você não tem acesso a esta aba.</p>';
+    return;
+  }
+  if(!checklistResponses.length){
+    container.innerHTML = `
+      <div class="stats" style="grid-template-columns:repeat(1,1fr);max-width:240px;margin-bottom:16px;">
+        <div class="stat total"><div class="num">0</div><div class="lbl">Respostas registradas</div></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink-soft);">Nenhuma resposta ainda. Se você já vinculou o formulário à planilha e mesmo assim não aparece nada, confira se o nome da aba de respostas bate com o configurado no Apps Script (CHECKLIST_RESPONSES_SHEET).</p>
+    `;
+    return;
+  }
+
+  const headers = Object.keys(checklistResponses[0]);
+  const rowsHtml = checklistResponses.slice().reverse().map(row => {
+    const tds = headers.map(h => `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="stats" style="grid-template-columns:repeat(1,1fr);max-width:240px;margin-bottom:16px;">
+      <div class="stat total"><div class="num">${checklistResponses.length}</div><div class="lbl">Respostas registradas</div></div>
+    </div>
+    <div class="logtable-wrap" style="overflow-x:auto;">
+      <table class="logtable">
+        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
 
 async function loadLogData(key){
   try{
@@ -2517,7 +2564,7 @@ function renderAvesWeightChart(){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
-  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas'];
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
   let batch1;
@@ -2559,6 +2606,16 @@ async function bulkLoadInitialData(){
   }else{
     customTabsRegistry = [];
   }
+
+  const checklistEntry = batch1['checklist-respostas'];
+  if(checklistEntry && checklistEntry.forbidden){
+    checklistResponses = null; // sem permissão pra essa aba — não mostra nada nem erro
+  }else if(checklistEntry && checklistEntry.value){
+    try{ checklistResponses = JSON.parse(checklistEntry.value); }catch(e){ checklistResponses = []; }
+  }else{
+    checklistResponses = [];
+  }
+  renderChecklistResults();
 
   renderAllLogs();
 
@@ -2607,6 +2664,10 @@ async function init(skipUrlReload){
     await Promise.all(Object.keys(LOG_CONFIGS).map(key => loadLogData(key)));
     renderAllLogs();
     await loadAndMountCustomTabs();
+    const checklistContainer = document.getElementById('checklist-results-container');
+    if(checklistContainer){
+      checklistContainer.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Configure o Google Sheets para ver as respostas aqui.</p>';
+    }
     document.getElementById('lastUpdate').textContent =
       "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
     return;
