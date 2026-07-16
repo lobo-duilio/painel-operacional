@@ -1347,6 +1347,37 @@ async function storageGet(key){
   return await window.storage.get(key);
 }
 
+/**
+ * Busca várias chaves de uma vez, numa única requisição — usado no
+ * carregamento inicial do dashboard para não fazer uma ida ao servidor
+ * por aba. Retorna um objeto { chave: { value, forbidden } }. Erros
+ * de rede fazem essa função lançar exceção; chaves individuais sem
+ * permissão vêm marcadas com forbidden:true, sem derrubar o lote todo.
+ */
+async function storageGetBatch(keys){
+  if(!APPS_SCRIPT_URL || keys.length === 0) return {};
+  let res, json;
+  try{
+    res = await fetch(APPS_SCRIPT_URL + '?action=get&keys=' + encodeURIComponent(keys.join(',')) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : ''));
+  }catch(e){
+    throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
+  }
+  if(!res.ok){
+    throw new Error('CONN_ERROR: servidor respondeu status ' + res.status);
+  }
+  try{
+    json = await res.json();
+  }catch(e){
+    throw new Error('CONN_ERROR: resposta não é JSON válido');
+  }
+  if(json.error === 'unauthenticated'){
+    handleSessionExpired();
+    throw new Error('AUTH_EXPIRED');
+  }
+  if(json.error) throw new Error('CONN_ERROR: ' + json.error);
+  return json.values || {};
+}
+
 async function storageSet(key, value){
   if(APPS_SCRIPT_URL){
     let res, json;
@@ -2386,6 +2417,91 @@ function renderAvesWeightChart(){
 
 /* ===================== INIT ===================== */
 
+/**
+ * Carrega tudo que o dashboard precisa no arranque em só 1-2 idas ao
+ * servidor (em vez de uma requisição separada por aba), usando
+ * storageGetBatch. Substitui loadData()/loadLogData() em loop no
+ * carregamento inicial — essas funções continuam existindo e sendo
+ * usadas normalmente para recarregas pontuais depois disso.
+ */
+async function bulkLoadInitialData(){
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas'];
+  Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
+
+  let batch1;
+  try{
+    batch1 = await storageGetBatch(firstBatchKeys);
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    document.getElementById('lastUpdate').textContent =
+      "Não foi possível carregar do Google Sheets agora (" + String(e.message).replace('CONN_ERROR: ','') + ").";
+    data = [];
+    Object.keys(LOG_CONFIGS).forEach(k => logData[k] = []);
+    customTabsRegistry = [];
+    renderAllLogs();
+    return;
+  }
+
+  const atividadesEntry = batch1['painel-atividades'];
+  if(atividadesEntry && atividadesEntry.forbidden){
+    data = [];
+  }else if(atividadesEntry && atividadesEntry.value !== null && atividadesEntry.value !== undefined){
+    try{ data = JSON.parse(atividadesEntry.value); }catch(e){ data = []; }
+  }else{
+    data = JSON.parse(JSON.stringify(SEED));
+    await save();
+  }
+
+  Object.keys(LOG_CONFIGS).forEach(k => {
+    const entry = batch1['log-' + k];
+    if(entry && entry.value){
+      try{ logData[k] = JSON.parse(entry.value); }catch(e){ logData[k] = []; }
+    }else{
+      logData[k] = [];
+    }
+  });
+
+  const registryEntry = batch1['abas-personalizadas'];
+  if(registryEntry && registryEntry.value){
+    try{ customTabsRegistry = JSON.parse(registryEntry.value); }catch(e){ customTabsRegistry = []; }
+  }else{
+    customTabsRegistry = [];
+  }
+
+  renderAllLogs();
+
+  if(customTabsRegistry.length){
+    const customKeys = customTabsRegistry.map(t => 'log-' + t.key);
+    let batch2 = {};
+    try{
+      batch2 = await storageGetBatch(customKeys);
+    }catch(e){
+      if(String(e.message) === 'AUTH_EXPIRED') return;
+      batch2 = {};
+    }
+    customTabsRegistry.forEach(tabDef => {
+      const entry = batch2['log-' + tabDef.key];
+      const rows = (entry && entry.value) ? (function(){ try{ return JSON.parse(entry.value); }catch(e){ return []; } })() : [];
+
+      if(tabDef.type === 'activity'){
+        mountActivityBoard(tabDef);
+        logData[tabDef.key] = rows;
+        activityBoardFilters[tabDef.key] = activityBoardFilters[tabDef.key] || 'Todas';
+        renderActivityBoard(tabDef.key);
+      }else if(tabDef.type === 'embed'){
+        mountEmbedTab(tabDef);
+      }else{
+        mountCustomTab(tabDef);
+        logData[tabDef.key] = rows;
+        renderLogTable(tabDef.key);
+      }
+    });
+  }
+
+  document.getElementById('lastUpdate').textContent =
+    "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
+}
+
 async function init(skipUrlReload){
   if(!skipUrlReload){
     APPS_SCRIPT_URL = await getAppsScriptUrl();
@@ -2396,11 +2512,11 @@ async function init(skipUrlReload){
     // Sem Google Sheets configurado: modo local dentro do Claude, sem exigir login.
     showApp();
     await loadData();
-    for(const key of Object.keys(LOG_CONFIGS)){
-      await loadLogData(key);
-    }
+    await Promise.all(Object.keys(LOG_CONFIGS).map(key => loadLogData(key)));
     renderAllLogs();
     await loadAndMountCustomTabs();
+    document.getElementById('lastUpdate').textContent =
+      "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
     return;
   }
 
@@ -2413,16 +2529,7 @@ async function init(skipUrlReload){
   }
 
   showApp();
-  await loadData();
-  if(!SESSION){
-    // A sessão pode ter expirado durante o carregamento das atividades.
-    return;
-  }
-  for(const key of Object.keys(LOG_CONFIGS)){
-    await loadLogData(key);
-  }
-  renderAllLogs();
-  await loadAndMountCustomTabs();
+  await bulkLoadInitialData();
   applyTabAccess();
 }
 
