@@ -304,6 +304,20 @@
     color:var(--ink-soft);
     margin:2px 0 0;
   }
+  .embed-wrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    overflow:hidden;
+    height:80vh;
+    min-height:520px;
+  }
+  .embed-wrap iframe{
+    width:100%;
+    height:100%;
+    border:none;
+    display:block;
+  }
   .subnav{
     display:flex;
     gap:6px;
@@ -681,12 +695,23 @@
   <div class="modal-card">
     <button class="modal-close" onclick="closeNewTabModal()">&times;</button>
     <h2>Nova aba</h2>
-    <p class="modal-sub">Cria uma nova aba com o mesmo formato do Operacional: estatísticas, filtros por área, status e prazo. Sincroniza com a planilha e a Agenda automaticamente.</p>
+    <p class="modal-sub">Escolha o tipo de aba e dê um nome. Abas de "quadro de atividades" sincronizam com a planilha e a Agenda; abas de "formulário/link" só exibem uma página incorporada.</p>
 
     <div class="modal-form-grid">
       <div class="full">
+        <label>Tipo de aba</label>
+        <select id="newTabTipo" onchange="toggleNewTabUrlField()">
+          <option value="activity">Quadro de atividades (como o Operacional)</option>
+          <option value="embed">Formulário ou link incorporado</option>
+        </select>
+      </div>
+      <div class="full">
         <label>Nome da aba</label>
         <input type="text" id="newTabNome" placeholder="ex: Comercial" onkeydown="if(event.key==='Enter') submitNewTab()">
+      </div>
+      <div class="full" id="newTabUrlField" style="display:none;">
+        <label>Link público do formulário (ou de qualquer página incorporável)</label>
+        <input type="text" id="newTabUrl" placeholder="https://docs.google.com/forms/d/e/.../viewform">
       </div>
     </div>
     <p class="modal-error" id="newTabError"></p>
@@ -1454,9 +1479,17 @@ async function saveTabsRegistry(){
   await storageSet('abas-personalizadas', JSON.stringify(customTabsRegistry));
 }
 
+function toggleNewTabUrlField(){
+  const tipo = document.getElementById('newTabTipo').value;
+  document.getElementById('newTabUrlField').style.display = (tipo === 'embed') ? '' : 'none';
+}
+
 function openNewTabModal(){
   document.getElementById('newTabError').textContent = '';
   document.getElementById('newTabNome').value = '';
+  document.getElementById('newTabTipo').value = 'activity';
+  document.getElementById('newTabUrl').value = '';
+  toggleNewTabUrlField();
   document.getElementById('newTabModal').classList.add('active');
 }
 
@@ -1469,13 +1502,33 @@ async function submitNewTab(){
   errEl.textContent = '';
 
   const nome = document.getElementById('newTabNome').value.trim();
+  const tipo = document.getElementById('newTabTipo').value;
   if(!nome){
     errEl.textContent = 'Preencha o nome da aba.';
     return;
   }
 
   const key = 'custom-' + Date.now();
-  const tabDef = { key: key, label: nome, type: 'activity' };
+  let tabDef;
+
+  if(tipo === 'embed'){
+    let url = document.getElementById('newTabUrl').value.trim();
+    if(!url){
+      errEl.textContent = 'Cole o link do formulário ou da página a incorporar.';
+      return;
+    }
+    if(!/^https?:\/\//i.test(url)){
+      errEl.textContent = 'O link precisa começar com http:// ou https://';
+      return;
+    }
+    // Google Forms precisa do parâmetro embedded=true para funcionar dentro de outra página.
+    if(/docs\.google\.com\/forms\//i.test(url) && !/embedded=true/i.test(url)){
+      url += (url.indexOf('?') === -1 ? '?' : '&') + 'embedded=true';
+    }
+    tabDef = { key: key, label: nome, type: 'embed', url: url };
+  }else{
+    tabDef = { key: key, label: nome, type: 'activity' };
+  }
 
   customTabsRegistry.push(tabDef);
   try{
@@ -1486,12 +1539,47 @@ async function submitNewTab(){
     return;
   }
 
-  mountActivityBoard(tabDef);
-  logData[key] = [];
-  activityBoardFilters[key] = 'Todas';
-  renderActivityBoard(key);
+  if(tipo === 'embed'){
+    mountEmbedTab(tabDef);
+  }else{
+    mountActivityBoard(tabDef);
+    logData[key] = [];
+    activityBoardFilters[key] = 'Todas';
+    renderActivityBoard(key);
+  }
   closeNewTabModal();
   showView(key);
+}
+
+/** Cria a navegação e um iframe para uma aba de formulário/link incorporado. */
+function mountEmbedTab(tabDef){
+  if(document.getElementById('view-' + tabDef.key)) return;
+
+  const nav = document.getElementById('mainnav');
+  const addBtn = document.getElementById('nav-add-tab');
+  const btn = document.createElement('button');
+  btn.id = 'nav-' + tabDef.key;
+  btn.textContent = tabDef.label;
+  btn.onclick = function(){ showView(tabDef.key); };
+  nav.insertBefore(btn, addBtn);
+
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const canManage = !APPS_SCRIPT_URL || isAdmin;
+  const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const deleteTabBtn = canManage
+    ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
+    : '';
+
+  const wrap = document.querySelector('.wrap');
+  const view = document.createElement('div');
+  view.className = 'view';
+  view.id = 'view-' + tabDef.key;
+  view.innerHTML =
+    '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
+    '<p>Formulário / link incorporado</p></div>' +
+    '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
+    '<div class="embed-wrap"><iframe src="' + tabDef.url + '" loading="lazy" referrerpolicy="no-referrer-when-downgrade">Carregando…</iframe></div>';
+  wrap.appendChild(view);
 }
 
 /** Cria a navegação e a estrutura (stats + filtros + cards) de uma aba-quadro-de-atividades. */
@@ -1740,6 +1828,8 @@ async function loadAndMountCustomTabs(){
       await loadLogData(tabDef.key);
       activityBoardFilters[tabDef.key] = activityBoardFilters[tabDef.key] || 'Todas';
       renderActivityBoard(tabDef.key);
+    }else if(tabDef.type === 'embed'){
+      mountEmbedTab(tabDef);
     }else{
       mountCustomTab(tabDef);
       await loadLogData(tabDef.key);
