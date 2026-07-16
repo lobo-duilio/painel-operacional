@@ -757,13 +757,19 @@
   </div>
 
   <div class="mainnav" id="mainnav">
-    <button id="nav-geral" class="active" onclick="showView('geral')">Operacional</button>
-    <button id="nav-roedores" onclick="showView('roedores')">Criação de roedores</button>
-    <button id="nav-aves" onclick="showView('aves')">Treinamento de aves</button>
+    <button id="nav-operacional-group" class="active" onclick="showView('geral')">Operacional</button>
+    <button id="nav-coordenacao-group" onclick="showView('coordenacao')">Operacional II (Coordenação)</button>
     <button id="nav-add-tab" onclick="openNewTabModal()">+ Nova aba</button>
   </div>
 
-  <!-- VIEW: PAINEL GERAL -->
+  <!-- SUBNAV INTERNO DO GRUPO "OPERACIONAL" -->
+  <div class="subnav" id="opGroupSubnav" style="display:flex;">
+    <button id="opsub-geral" class="active" onclick="showView('geral')">Atividades</button>
+    <button id="opsub-roedores" onclick="showView('roedores')">Criação de roedores</button>
+    <button id="opsub-aves" onclick="showView('aves')">Treinamento de aves</button>
+  </div>
+
+  <!-- VIEW: PAINEL GERAL (Atividades) -->
   <div class="view active" id="view-geral">
     <div class="stats" id="stats"></div>
     <div class="filters-row">
@@ -805,6 +811,22 @@
     </div>
     <div class="subview active" id="sub-aves-treinamento"></div>
     <div class="subview" id="sub-aves-feedback"></div>
+  </div>
+
+  <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
+  <div class="view" id="view-coordenacao">
+    <div class="module-header">
+      <div>
+        <h2>Operacional II (Coordenação)</h2>
+        <p>Checklist veicular</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="void(0)">Checklist veicular</button>
+    </div>
+    <div class="embed-wrap">
+      <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSefF_ISgbUfz7ilIuKu3BzDv4IOzaCKuCCsH7TEdFANC-vDbw/viewform?usp=header&embedded=true" loading="lazy" referrerpolicy="no-referrer-when-downgrade">Carregando…</iframe>
+    </div>
   </div>
 
 </div>
@@ -1027,6 +1049,35 @@ function updateUserInfo(){
   }
 }
 
+/**
+ * Um usuário não-administrador "é dono" de uma aba quando ela é
+ * exatamente a aba atribuída a ele (SESSION.aba). Donos podem
+ * adicionar e remover atividades/registros dentro da PRÓPRIA aba —
+ * mas não excluir a aba em si, nem mexer em outras abas (isso
+ * continua exclusivo do administrador, e é sempre verificado no
+ * servidor também, não só aqui).
+ */
+/**
+ * Mapeia uma chave interna do dashboard (como usada em LOG_CONFIGS/
+ * logData — sem o prefixo "log-" usado só na comunicação com o
+ * servidor) para o identificador de aba correspondente.
+ */
+function clientKeyToTabId(key){
+  if(key.indexOf('roedores-') === 0) return 'roedores';
+  if(key.indexOf('aves-') === 0) return 'aves';
+  return key; // abas personalizadas: a própria chave já é o tabId
+}
+
+function isOwnerOfTab(tabId){
+  if(!SESSION || SESSION.papel === 'adm') return false;
+  return (SESSION.aba || 'geral') === tabId;
+}
+
+function canManageTab(tabId){
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  return !APPS_SCRIPT_URL || isAdmin || isOwnerOfTab(tabId);
+}
+
 function applyRolePermissions(){
   const isAdmin = !!(SESSION && SESSION.papel === 'adm');
   const resetBtn = document.getElementById('resetBtn');
@@ -1038,7 +1089,7 @@ function applyRolePermissions(){
   const addTabBtn = document.getElementById('nav-add-tab');
   if(addTabBtn) addTabBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
   const newActivityBtn = document.getElementById('newActivityBtn');
-  if(newActivityBtn) newActivityBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
+  if(newActivityBtn) newActivityBtn.style.display = canManageTab('geral') ? '' : 'none';
 }
 
 /**
@@ -1054,10 +1105,23 @@ function applyTabAccess(){
   if(isAdmin) return; // administrador vê todas as abas
 
   const allowed = (SESSION && SESSION.aba) ? SESSION.aba : 'geral';
+  const inOperacionalGroup = OPERACIONAL_GROUP_IDS.indexOf(allowed) !== -1;
+
+  const opGroupBtn = document.getElementById('nav-operacional-group');
+  if(opGroupBtn) opGroupBtn.style.display = inOperacionalGroup ? '' : 'none';
+
+  OPERACIONAL_GROUP_IDS.forEach(function(tabId){
+    const innerBtn = document.getElementById('opsub-' + tabId);
+    if(innerBtn) innerBtn.style.display = (tabId === allowed) ? '' : 'none';
+  });
+
+  const coordBtn = document.getElementById('nav-coordenacao-group');
+  if(coordBtn) coordBtn.style.display = (allowed === 'coordenacao') ? '' : 'none';
+
   const nav = document.getElementById('mainnav');
   const buttons = nav.querySelectorAll('button[id^="nav-"]');
   buttons.forEach(function(btn){
-    if(btn.id === 'nav-add-tab') return;
+    if(['nav-add-tab','nav-operacional-group','nav-coordenacao-group'].indexOf(btn.id) !== -1) return;
     const tabId = btn.id.replace('nav-', '');
     btn.style.display = (tabId === allowed) ? '' : 'none';
   });
@@ -1185,9 +1249,10 @@ function editUserAccount(email, nome, papel, aba){
 
 function getTabOptionsList(){
   const options = [
-    { id: 'geral', label: 'Operacional' },
-    { id: 'roedores', label: 'Criação de roedores' },
-    { id: 'aves', label: 'Treinamento de aves' }
+    { id: 'geral', label: 'Operacional › Atividades' },
+    { id: 'roedores', label: 'Operacional › Criação de roedores' },
+    { id: 'aves', label: 'Operacional › Treinamento de aves' },
+    { id: 'coordenacao', label: 'Operacional II › Checklist veicular' }
   ];
   customTabsRegistry.forEach(t => options.push({ id: t.key, label: t.label }));
   return options;
@@ -1554,8 +1619,8 @@ async function submitNewActivity(){
   const errEl = document.getElementById('newActError');
   errEl.textContent = '';
 
-  if(APPS_SCRIPT_URL && (!SESSION || SESSION.papel !== 'adm')){
-    errEl.textContent = 'Somente administradores podem criar novas atividades.';
+  if(!canManageTab(activeActivityBoardKey)){
+    errEl.textContent = 'Você não tem permissão para criar atividades nesta aba.';
     return;
   }
 
@@ -1752,12 +1817,13 @@ function mountActivityBoard(tabDef){
   nav.insertBefore(btn, addBtn);
 
   const isAdmin = !!(SESSION && SESSION.papel === 'adm');
-  const canManage = !APPS_SCRIPT_URL || isAdmin;
+  const canAddActivity = canManageTab(tabDef.key);
+  const canDeleteTabItself = !APPS_SCRIPT_URL || isAdmin;
   const safeLabel = tabDef.label.replace(/'/g, "\\'");
-  const newActivityBtnHtml = canManage
+  const newActivityBtnHtml = canAddActivity
     ? `<button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="openNewActivityModal('${tabDef.key}')">+ Nova atividade</button>`
     : '';
-  const deleteTabBtn = canManage
+  const deleteTabBtn = canDeleteTabItself
     ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
     : '';
 
@@ -2005,7 +2071,7 @@ function buildActivityCardHtml(item, boardKey){
   }).join('');
 
   const isGeral = boardKey === 'geral';
-  const canDelete = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
+  const canDelete = canManageTab(boardKey);
   const statusHandler = isGeral ? `updateStatus(${item.id}, this.value)` : `updateActivityBoardStatus('${boardKey}', ${item.id}, this.value)`;
   const nextHandler = isGeral ? `updateField(${item.id},'next',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'next',this.value)`;
   const prazoHandler = isGeral ? `updateField(${item.id},'prazo',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'prazo',this.value)`;
@@ -2090,11 +2156,37 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves'];
+
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.getElementById('view-'+name).classList.add('active');
+  const viewEl = document.getElementById('view-'+name);
+  if(viewEl) viewEl.classList.add('active');
+
   document.querySelectorAll('.mainnav button').forEach(b=>b.classList.remove('active'));
-  document.getElementById('nav-'+name).classList.add('active');
+
+  let topId;
+  if(OPERACIONAL_GROUP_IDS.indexOf(name) !== -1){
+    topId = 'nav-operacional-group';
+  }else if(name === 'coordenacao'){
+    topId = 'nav-coordenacao-group';
+  }else{
+    topId = 'nav-' + name;
+  }
+  const topBtn = document.getElementById(topId);
+  if(topBtn) topBtn.classList.add('active');
+
+  const opSubnav = document.getElementById('opGroupSubnav');
+  if(opSubnav){
+    if(OPERACIONAL_GROUP_IDS.indexOf(name) !== -1){
+      opSubnav.style.display = 'flex';
+      opSubnav.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+      const innerBtn = document.getElementById('opsub-'+name);
+      if(innerBtn) innerBtn.classList.add('active');
+    }else{
+      opSubnav.style.display = 'none';
+    }
+  }
 }
 
 function showSub(module, name){
@@ -2182,7 +2274,7 @@ function renderLogTable(key){
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
 
-  const canDelete = !APPS_SCRIPT_URL || (SESSION && SESSION.papel === 'adm');
+  const canDelete = canManageTab(clientKeyToTabId(key));
 
   const bodyRows = rows.length ? rows.map(row=>{
     const tds = cfg.cols.map(c=>{
