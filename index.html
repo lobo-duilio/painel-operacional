@@ -615,7 +615,7 @@
 <div id="userModal" class="modal-overlay">
   <div class="modal-card">
     <button class="modal-close" onclick="closeUserPanel()">&times;</button>
-    <h2>Gerenciar usuários</h2>
+    <h2 id="userModalTitle">Gerenciar usuários</h2>
     <p class="modal-sub">Cadastre pessoas da equipe com acesso ao dashboard. Nível "Administrador" tem acesso a todas as abas, pode excluir registros e restaurar dados. Nível "Editor" só acessa UMA aba (escolhida abaixo), e pode ver/editar nela, mas não excluir.</p>
 
     <div class="modal-form-grid">
@@ -639,12 +639,15 @@
         <input type="email" id="newUserEmail" placeholder="pessoa@empresa.com">
       </div>
       <div class="full">
-        <label>Senha provisória</label>
+        <label id="newUserSenhaLabel">Senha provisória</label>
         <input type="text" id="newUserSenha" placeholder="mínimo 6 caracteres">
       </div>
     </div>
     <p class="modal-error" id="userFormError"></p>
-    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="createUserAccount()">Criar usuário</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" id="userFormSubmitBtn" onclick="submitUserForm()">Criar usuário</button>
+      <button class="btn" id="userFormCancelBtn" style="display:none;" onclick="resetUserForm()">Cancelar edição</button>
+    </div>
 
     <div class="users-list">
       <h3>Usuários cadastrados</h3>
@@ -1131,6 +1134,55 @@ async function userApiCall(action, extra){
   return json;
 }
 
+let editingUserEmail = null;
+
+function openUserPanel(){
+  resetUserForm();
+  document.getElementById('userModal').classList.add('active');
+  loadUsersList();
+}
+
+function closeUserPanel(){
+  document.getElementById('userModal').classList.remove('active');
+}
+
+function resetUserForm(){
+  editingUserEmail = null;
+  document.getElementById('userFormError').textContent = '';
+  document.getElementById('userModalTitle').textContent = 'Gerenciar usuários';
+  document.getElementById('newUserNome').value = '';
+  document.getElementById('newUserEmail').value = '';
+  document.getElementById('newUserEmail').disabled = false;
+  document.getElementById('newUserSenha').value = '';
+  document.getElementById('newUserSenhaLabel').textContent = 'Senha provisória';
+  document.getElementById('newUserSenha').placeholder = 'mínimo 6 caracteres';
+  document.getElementById('newUserPapel').value = 'editor';
+  populateAbaOptions();
+  toggleNewUserAbaField();
+  document.getElementById('userFormSubmitBtn').textContent = 'Criar usuário';
+  document.getElementById('userFormCancelBtn').style.display = 'none';
+}
+
+function editUserAccount(email, nome, papel, aba){
+  editingUserEmail = email;
+  document.getElementById('userFormError').textContent = '';
+  document.getElementById('userModalTitle').textContent = 'Editar usuário';
+  document.getElementById('newUserNome').value = nome || '';
+  document.getElementById('newUserEmail').value = email;
+  document.getElementById('newUserEmail').disabled = true;
+  document.getElementById('newUserSenha').value = '';
+  document.getElementById('newUserSenhaLabel').textContent = 'Nova senha (opcional)';
+  document.getElementById('newUserSenha').placeholder = 'deixe em branco para manter a senha atual';
+  document.getElementById('newUserPapel').value = (papel === 'adm') ? 'adm' : 'editor';
+  populateAbaOptions();
+  if(aba) document.getElementById('newUserAba').value = aba;
+  toggleNewUserAbaField();
+  document.getElementById('userFormSubmitBtn').textContent = 'Salvar alterações';
+  document.getElementById('userFormCancelBtn').style.display = '';
+  window.scrollTo({top:0});
+  document.querySelector('#userModal .modal-card').scrollTop = 0;
+}
+
 function getTabOptionsList(){
   const options = [
     { id: 'geral', label: 'Operacional' },
@@ -1156,22 +1208,6 @@ function toggleNewUserAbaField(){
   document.getElementById('newUserAbaField').style.display = (papel === 'adm') ? 'none' : '';
 }
 
-function openUserPanel(){
-  document.getElementById('userFormError').textContent = '';
-  document.getElementById('newUserNome').value = '';
-  document.getElementById('newUserEmail').value = '';
-  document.getElementById('newUserSenha').value = '';
-  document.getElementById('newUserPapel').value = 'editor';
-  populateAbaOptions();
-  toggleNewUserAbaField();
-  document.getElementById('userModal').classList.add('active');
-  loadUsersList();
-}
-
-function closeUserPanel(){
-  document.getElementById('userModal').classList.remove('active');
-}
-
 async function loadUsersList(){
   const container = document.getElementById('usersListContainer');
   container.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Carregando…</p>';
@@ -1188,17 +1224,21 @@ async function loadUsersList(){
       const roleClass = isAdmUser ? 'u-role role-adm' : 'u-role';
       const roleLabel = isAdmUser ? 'Administrador' : (u.papel || 'editor');
       const abaLabel = isAdmUser ? 'Todas as abas' : tabLabelForId(u.aba || 'geral');
+      const safeEmail = u.email.replace(/'/g,"\\'");
+      const safeNome = (u.nome||'').replace(/'/g,"\\'");
+      const editBtn = `<button class="rowdel" style="color:var(--steel);" onclick="editUserAccount('${safeEmail}','${safeNome}','${u.papel}','${u.aba||''}')">Editar</button>`;
       const delBtn = isSelf
         ? '<span style="font-size:11px;color:var(--ink-soft);">(você)</span>'
-        : `<button class="rowdel" onclick="deleteUserAccount('${u.email.replace(/'/g,"\\'")}')">Remover</button>`;
+        : `<button class="rowdel" onclick="deleteUserAccount('${safeEmail}')">Remover</button>`;
       return `
         <div class="user-row">
           <div class="u-info">
             <span>${u.nome || '(sem nome)'}</span>
             <span class="u-email">${u.email} · ${abaLabel}</span>
           </div>
-          <div style="display:flex;align-items:center;">
+          <div style="display:flex;align-items:center;gap:6px;">
             <span class="${roleClass}">${roleLabel}</span>
+            ${editBtn}
             ${delBtn}
           </div>
         </div>
@@ -1210,7 +1250,7 @@ async function loadUsersList(){
   }
 }
 
-async function createUserAccount(){
+async function submitUserForm(){
   const errEl = document.getElementById('userFormError');
   errEl.textContent = '';
 
@@ -1220,7 +1260,28 @@ async function createUserAccount(){
   const papel = document.getElementById('newUserPapel').value;
   const aba = document.getElementById('newUserAba').value;
 
-  if(!nome || !email || !senha){
+  if(!nome || !email){
+    errEl.textContent = 'Preencha nome e e-mail.';
+    return;
+  }
+
+  if(editingUserEmail){
+    if(senha && senha.length < 6){
+      errEl.textContent = 'A nova senha precisa ter pelo menos 6 caracteres (ou deixe em branco para não trocar).';
+      return;
+    }
+    try{
+      await userApiCall('updateUser', { email: editingUserEmail, nome: nome, papel: papel, aba: aba, password: senha });
+      resetUserForm();
+      await loadUsersList();
+    }catch(e){
+      if(String(e.message) === 'AUTH_EXPIRED') return;
+      errEl.textContent = e.message || String(e);
+    }
+    return;
+  }
+
+  if(!senha){
     errEl.textContent = 'Preencha nome, e-mail e senha.';
     return;
   }
@@ -1231,11 +1292,7 @@ async function createUserAccount(){
 
   try{
     await userApiCall('createUser', { nome: nome, email: email, password: senha, papel: papel, aba: aba });
-    document.getElementById('newUserNome').value = '';
-    document.getElementById('newUserEmail').value = '';
-    document.getElementById('newUserSenha').value = '';
-    document.getElementById('newUserPapel').value = 'editor';
-    toggleNewUserAbaField();
+    resetUserForm();
     await loadUsersList();
   }catch(e){
     if(String(e.message) === 'AUTH_EXPIRED') return;
