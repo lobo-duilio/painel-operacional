@@ -746,19 +746,15 @@
     <div class="module-header">
       <div>
         <h2>Criação de roedores</h2>
-        <p>Controle de nascimento, abate, entrada, saída e estoque</p>
+        <p>Controle de entrada, saída e estoque</p>
       </div>
     </div>
     <div class="subnav">
-      <button class="active" onclick="showSub('roedores','nascimento')">Nascimento</button>
-      <button onclick="showSub('roedores','abate')">Abate</button>
-      <button onclick="showSub('roedores','estoque')">Estoque</button>
+      <button class="active" onclick="showSub('roedores','estoque')">Estoque</button>
       <button onclick="showSub('roedores','entrada')">Entrada</button>
       <button onclick="showSub('roedores','saida')">Saída</button>
     </div>
-    <div class="subview active" id="sub-roedores-nascimento"></div>
-    <div class="subview" id="sub-roedores-abate"></div>
-    <div class="subview" id="sub-roedores-estoque"></div>
+    <div class="subview active" id="sub-roedores-estoque"></div>
     <div class="subview" id="sub-roedores-entrada"></div>
     <div class="subview" id="sub-roedores-saida"></div>
   </div>
@@ -1865,24 +1861,6 @@ function showSub(module, name){
 /* ===================== MÓDULOS: ROEDORES E AVES (tabelas de registro) ===================== */
 
 const LOG_CONFIGS = {
-  'roedores-nascimento': {
-    container:'sub-roedores-nascimento',
-    cols:[
-      {key:'data', label:'Data', type:'date'},
-      {key:'linhagem', label:'Linhagem / lote', type:'text'},
-      {key:'quantidade', label:'Quantidade', type:'number'},
-      {key:'obs', label:'Observação', type:'text'}
-    ]
-  },
-  'roedores-abate': {
-    container:'sub-roedores-abate',
-    cols:[
-      {key:'data', label:'Data', type:'date'},
-      {key:'linhagem', label:'Linhagem / lote', type:'text'},
-      {key:'quantidade', label:'Quantidade', type:'number'},
-      {key:'motivo', label:'Motivo / destino', type:'text'}
-    ]
-  },
   'roedores-entrada': {
     container:'sub-roedores-entrada',
     cols:[
@@ -2095,34 +2073,30 @@ function buildLineChartSVG(series, opts){
 
 function renderEstoque(){
   const container = document.getElementById('sub-roedores-estoque');
-  const nasc = logData['roedores-nascimento'] || [];
   const ent = logData['roedores-entrada'] || [];
-  const aba = logData['roedores-abate'] || [];
   const sai = logData['roedores-saida'] || [];
 
   const linhagens = new Set();
-  [nasc,ent,aba,sai].forEach(arr=>arr.forEach(r=>{ if(r.linhagem) linhagens.add(r.linhagem); }));
+  [ent,sai].forEach(arr=>arr.forEach(r=>{ if(r.linhagem) linhagens.add(r.linhagem); }));
 
   const sum = (arr, linhagem) => arr
     .filter(r=> linhagem==null ? true : r.linhagem===linhagem)
     .reduce((acc,r)=> acc + (parseFloat(r.quantidade)||0), 0);
 
-  const totalNasc = sum(nasc), totalEnt = sum(ent), totalAba = sum(aba), totalSai = sum(sai);
-  const totalEstoque = totalNasc + totalEnt - totalAba - totalSai;
+  const totalEnt = sum(ent), totalSai = sum(sai);
+  const totalEstoque = totalEnt - totalSai;
 
   const rows = Array.from(linhagens).sort().map(l=>{
-    const n = sum(nasc,l), e = sum(ent,l), a = sum(aba,l), s = sum(sai,l);
-    const estoque = n + e - a - s;
+    const e = sum(ent,l), s = sum(sai,l);
+    const estoque = e - s;
     return `<tr>
-      <td>${l}</td><td>${n}</td><td>${e}</td><td>${a}</td><td>${s}</td>
+      <td>${l}</td><td>${e}</td><td>${s}</td>
       <td style="font-weight:700">${estoque}</td>
     </tr>`;
-  }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum registro com linhagem/lote informado ainda.</td></tr>`;
+  }).join('') || `<tr class="empty-row"><td colspan="4">Nenhum registro com linhagem/lote informado ainda.</td></tr>`;
 
   const events = [];
-  nasc.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
   ent.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
-  aba.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
   sai.forEach(r=>{ if(r.data) events.push({data:r.data, delta:-(parseFloat(r.quantidade)||0)}); });
   events.sort((a,b)=> new Date(a.data) - new Date(b.data));
   let running = 0;
@@ -2132,9 +2106,7 @@ function renderEstoque(){
   container.innerHTML = `
     <div class="estoque-summary">
       <div class="stat total"><div class="num">${totalEstoque}</div><div class="lbl">Estoque atual total</div></div>
-      <div class="stat s-concl"><div class="num">${totalNasc}</div><div class="lbl">Total nascimentos</div></div>
       <div class="stat s-exec"><div class="num">${totalEnt}</div><div class="lbl">Total entradas</div></div>
-      <div class="stat s-atraso"><div class="num">${totalAba}</div><div class="lbl">Total abates</div></div>
       <div class="stat s-plan"><div class="num">${totalSai}</div><div class="lbl">Total saídas</div></div>
     </div>
     <div class="logtable-wrap" style="margin-bottom:12px;">
@@ -2144,7 +2116,7 @@ function renderEstoque(){
     <div class="logtable-wrap">
       <table class="logtable">
         <thead>
-          <tr><th>Linhagem / lote</th><th>Nascimentos</th><th>Entradas</th><th>Abates</th><th>Saídas</th><th>Estoque atual</th></tr>
+          <tr><th>Linhagem / lote</th><th>Entradas</th><th>Saídas</th><th>Estoque atual</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
