@@ -616,7 +616,7 @@
   <div class="modal-card">
     <button class="modal-close" onclick="closeUserPanel()">&times;</button>
     <h2>Gerenciar usuários</h2>
-    <p class="modal-sub">Cadastre pessoas da equipe com acesso ao dashboard. Nível "Administrador" pode excluir registros e restaurar dados; "Editor" pode ver e editar tudo, mas não excluir.</p>
+    <p class="modal-sub">Cadastre pessoas da equipe com acesso ao dashboard. Nível "Administrador" tem acesso a todas as abas, pode excluir registros e restaurar dados. Nível "Editor" só acessa UMA aba (escolhida abaixo), e pode ver/editar nela, mas não excluir.</p>
 
     <div class="modal-form-grid">
       <div>
@@ -625,10 +625,14 @@
       </div>
       <div>
         <label>Nível</label>
-        <select id="newUserPapel">
+        <select id="newUserPapel" onchange="toggleNewUserAbaField()">
           <option value="editor">Editor (padrão)</option>
           <option value="adm">Administrador</option>
         </select>
+      </div>
+      <div class="full" id="newUserAbaField">
+        <label>Aba de acesso (só para Editor)</label>
+        <select id="newUserAba"></select>
       </div>
       <div class="full">
         <label>E-mail</label>
@@ -1034,6 +1038,32 @@ function applyRolePermissions(){
   if(newActivityBtn) newActivityBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
 }
 
+/**
+ * Restringe a navegação de quem não é administrador a uma única aba
+ * (SESSION.aba). Deve ser chamada depois que TODAS as abas (inclusive
+ * as personalizadas) já foram montadas no menu, para conseguir escondê-
+ * las corretamente. A validação de verdade acontece no servidor — isso
+ * aqui só ajusta a interface para não mostrar botões que dariam erro.
+ */
+function applyTabAccess(){
+  if(!APPS_SCRIPT_URL) return; // modo local (sem login): sem restrição
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  if(isAdmin) return; // administrador vê todas as abas
+
+  const allowed = (SESSION && SESSION.aba) ? SESSION.aba : 'geral';
+  const nav = document.getElementById('mainnav');
+  const buttons = nav.querySelectorAll('button[id^="nav-"]');
+  buttons.forEach(function(btn){
+    if(btn.id === 'nav-add-tab') return;
+    const tabId = btn.id.replace('nav-', '');
+    btn.style.display = (tabId === allowed) ? '' : 'none';
+  });
+
+  if(document.getElementById('view-' + allowed)){
+    showView(allowed);
+  }
+}
+
 async function doLogin(){
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
@@ -1066,7 +1096,7 @@ async function doLogin(){
     return;
   }
 
-  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel };
+  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel, aba: json.aba || '' };
   await setStoredSession(SESSION);
   showApp();
   await init(true);
@@ -1101,12 +1131,39 @@ async function userApiCall(action, extra){
   return json;
 }
 
+function getTabOptionsList(){
+  const options = [
+    { id: 'geral', label: 'Operacional' },
+    { id: 'roedores', label: 'Criação de roedores' },
+    { id: 'aves', label: 'Treinamento de aves' }
+  ];
+  customTabsRegistry.forEach(t => options.push({ id: t.key, label: t.label }));
+  return options;
+}
+
+function tabLabelForId(id){
+  const found = getTabOptionsList().find(o => o.id === id);
+  return found ? found.label : (id || 'Operacional');
+}
+
+function populateAbaOptions(){
+  const sel = document.getElementById('newUserAba');
+  sel.innerHTML = getTabOptionsList().map(o => `<option value="${o.id}">${o.label}</option>`).join('');
+}
+
+function toggleNewUserAbaField(){
+  const papel = document.getElementById('newUserPapel').value;
+  document.getElementById('newUserAbaField').style.display = (papel === 'adm') ? 'none' : '';
+}
+
 function openUserPanel(){
   document.getElementById('userFormError').textContent = '';
   document.getElementById('newUserNome').value = '';
   document.getElementById('newUserEmail').value = '';
   document.getElementById('newUserSenha').value = '';
   document.getElementById('newUserPapel').value = 'editor';
+  populateAbaOptions();
+  toggleNewUserAbaField();
   document.getElementById('userModal').classList.add('active');
   loadUsersList();
 }
@@ -1127,8 +1184,10 @@ async function loadUsersList(){
     }
     container.innerHTML = users.map(u => {
       const isSelf = SESSION && SESSION.email && u.email.toLowerCase() === SESSION.email.toLowerCase();
-      const roleClass = u.papel === 'adm' ? 'u-role role-adm' : 'u-role';
-      const roleLabel = u.papel === 'adm' ? 'Administrador' : (u.papel || 'editor');
+      const isAdmUser = u.papel === 'adm';
+      const roleClass = isAdmUser ? 'u-role role-adm' : 'u-role';
+      const roleLabel = isAdmUser ? 'Administrador' : (u.papel || 'editor');
+      const abaLabel = isAdmUser ? 'Todas as abas' : tabLabelForId(u.aba || 'geral');
       const delBtn = isSelf
         ? '<span style="font-size:11px;color:var(--ink-soft);">(você)</span>'
         : `<button class="rowdel" onclick="deleteUserAccount('${u.email.replace(/'/g,"\\'")}')">Remover</button>`;
@@ -1136,7 +1195,7 @@ async function loadUsersList(){
         <div class="user-row">
           <div class="u-info">
             <span>${u.nome || '(sem nome)'}</span>
-            <span class="u-email">${u.email}</span>
+            <span class="u-email">${u.email} · ${abaLabel}</span>
           </div>
           <div style="display:flex;align-items:center;">
             <span class="${roleClass}">${roleLabel}</span>
@@ -1159,6 +1218,7 @@ async function createUserAccount(){
   const email = document.getElementById('newUserEmail').value.trim();
   const senha = document.getElementById('newUserSenha').value;
   const papel = document.getElementById('newUserPapel').value;
+  const aba = document.getElementById('newUserAba').value;
 
   if(!nome || !email || !senha){
     errEl.textContent = 'Preencha nome, e-mail e senha.';
@@ -1170,11 +1230,12 @@ async function createUserAccount(){
   }
 
   try{
-    await userApiCall('createUser', { nome: nome, email: email, password: senha, papel: papel });
+    await userApiCall('createUser', { nome: nome, email: email, password: senha, papel: papel, aba: aba });
     document.getElementById('newUserNome').value = '';
     document.getElementById('newUserEmail').value = '';
     document.getElementById('newUserSenha').value = '';
     document.getElementById('newUserPapel').value = 'editor';
+    toggleNewUserAbaField();
     await loadUsersList();
   }catch(e){
     if(String(e.message) === 'AUTH_EXPIRED') return;
@@ -1219,6 +1280,9 @@ async function storageGet(key){
       handleSessionExpired();
       throw new Error('AUTH_EXPIRED');
     }
+    if(json.error === 'FORBIDDEN_TAB'){
+      throw new Error('FORBIDDEN_TAB');
+    }
     if(json.error) throw new Error('CONN_ERROR: ' + json.error);
     if(json.value === null || json.value === undefined) throw new Error('NOT_FOUND');
     return { value: json.value };
@@ -1261,6 +1325,11 @@ async function loadData(){
     data = JSON.parse(res.value);
   }catch(e){
     if(String(e.message) === 'AUTH_EXPIRED') return;
+    if(String(e.message) === 'FORBIDDEN_TAB'){
+      data = [];
+      renderGeral();
+      return;
+    }
     if(APPS_SCRIPT_URL && String(e.message).startsWith('CONN_ERROR')){
       data = [];
       document.getElementById('lastUpdate').textContent =
@@ -2297,6 +2366,7 @@ async function init(skipUrlReload){
   }
   renderAllLogs();
   await loadAndMountCustomTabs();
+  applyTabAccess();
 }
 
 init();
