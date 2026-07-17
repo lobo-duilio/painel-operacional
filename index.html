@@ -2449,6 +2449,46 @@ function buildKanbanBoardHtml(items, boardKey){
 
 /* ---- Notificações de prazo (sino no topo) ---- */
 
+let readNotifications = loadReadNotificationsSync();
+
+function loadReadNotificationsSync(){
+  try{
+    const raw = localStorage.getItem('painel-notif-lidas');
+    return new Set(raw ? JSON.parse(raw) : []);
+  }catch(e){
+    return new Set(); // sem localStorage disponível: fica só na memória desta sessão
+  }
+}
+
+function saveReadNotificationsSync(){
+  try{
+    localStorage.setItem('painel-notif-lidas', JSON.stringify(Array.from(readNotifications)));
+  }catch(e){
+    // ignora — a marcação como lida ainda funciona durante a sessão, só não persiste
+  }
+}
+
+function markNotificationRead(notifId){
+  if(!notifId) return;
+  readNotifications.add(notifId);
+  saveReadNotificationsSync();
+  updateNotifBadge();
+}
+
+function markAllNotificationsRead(){
+  computeNotifications().forEach(entry => readNotifications.add(entry.notifId));
+  computeChecklistAlerts().forEach(row => readNotifications.add(getChecklistRowId(row)));
+  saveReadNotificationsSync();
+  updateNotifBadge();
+  renderNotifPanel();
+}
+
+function getChecklistRowId(row){
+  const tsKey = Object.keys(row).find(k => normalizeHeader(k).indexOf('carimbo') !== -1);
+  if(tsKey && row[tsKey]) return 'checklist:' + row[tsKey];
+  return 'checklist:' + JSON.stringify(row);
+}
+
 /** Reúne os itens de todos os quadros de atividades visíveis para o usuário atual. */
 function getAllActivityItems(){
   const result = [];
@@ -2474,13 +2514,14 @@ function computeNotifications(){
     return d <= threshold;
   });
 
+  relevant.forEach(entry => { entry.notifId = 'prazo:' + entry.boardKey + ':' + entry.item.id; });
   relevant.sort((a,b) => new Date(a.item.prazo) - new Date(b.item.prazo));
-  return relevant;
+  return relevant.filter(entry => !readNotifications.has(entry.notifId));
 }
 
 function computeChecklistAlerts(){
   if(!checklistResponses || !checklistResponses.length) return [];
-  return checklistResponses.filter(rowIsAlert);
+  return checklistResponses.filter(rowIsAlert).filter(row => !readNotifications.has(getChecklistRowId(row)));
 }
 
 function updateNotifBadge(){
@@ -2555,7 +2596,9 @@ function renderNotifPanel(){
     return;
   }
 
-  let html = '';
+  let html = '<div style="display:flex;justify-content:flex-end;padding:2px 6px 4px;">' +
+    '<button onclick="markAllNotificationsRead()" style="border:none;background:transparent;color:var(--steel);font-size:11px;font-weight:700;cursor:pointer;">Marcar tudo como lido</button>' +
+    '</div>';
 
   if(list.length > 0){
     html += '<h4>Atrasadas ou vencendo em até 3 dias</h4>' + list.map(entry => {
@@ -2568,7 +2611,7 @@ function renderNotifPanel(){
         : (diffDays === 0 ? 'Vence hoje' : 'Vence em ' + diffDays + (diffDays === 1 ? ' dia' : ' dias'));
       const safeTitle = String(it.title || '(sem título)').replace(/</g,'&lt;');
       return `
-        <button class="notif-item" onclick="goToNotification('${entry.boardKey}')">
+        <button class="notif-item" onclick="goToNotification('${entry.boardKey}', '${entry.notifId}')">
           <div class="ni-title">${safeTitle}</div>
           <div class="ni-meta ${overdue ? 'overdue' : ''}">${entry.boardLabel} · ${label}</div>
         </button>
@@ -2583,8 +2626,9 @@ function renderNotifPanel(){
       const dataKey = findHeader(row, /^data$/);
       const title = escapeHtml((titleKey && row[titleKey]) ? row[titleKey] : 'Checklist veicular');
       const dataStr = escapeHtml((dataKey && row[dataKey]) ? String(row[dataKey]).slice(0,10) : '');
+      const rowId = getChecklistRowId(row);
       return `
-        <button class="notif-item" onclick="goToNotification('coordenacao')">
+        <button class="notif-item" onclick="goToNotification('coordenacao', '${rowId.replace(/'/g,"\\'")}')">
           <div class="ni-title">${title}</div>
           <div class="ni-meta overdue">Operacional II · ${dataStr}</div>
         </button>
@@ -2595,7 +2639,8 @@ function renderNotifPanel(){
   panel.innerHTML = html;
 }
 
-function goToNotification(boardKey){
+function goToNotification(boardKey, notifId){
+  markNotificationRead(notifId);
   document.getElementById('notifPanel').classList.remove('active');
   if(document.getElementById('view-' + boardKey)){
     showView(boardKey);
