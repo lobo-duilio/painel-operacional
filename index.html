@@ -631,8 +631,8 @@
         </select>
       </div>
       <div class="full" id="newUserAbaField">
-        <label>Aba de acesso (só para Editor)</label>
-        <select id="newUserAba"></select>
+        <label>Abas de acesso (só para Editor) — marque uma ou mais</label>
+        <div id="newUserAbaCheckboxes" style="max-height:170px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:10px 12px;background:#FCFCFA;"></div>
       </div>
       <div class="full">
         <label>E-mail</label>
@@ -1053,12 +1053,12 @@ function updateUserInfo(){
 }
 
 /**
- * Um usuário não-administrador "é dono" de uma aba quando ela é
- * exatamente a aba atribuída a ele (SESSION.aba). Donos podem
- * adicionar e remover atividades/registros dentro da PRÓPRIA aba —
- * mas não excluir a aba em si, nem mexer em outras abas (isso
- * continua exclusivo do administrador, e é sempre verificado no
- * servidor também, não só aqui).
+ * Um usuário não-administrador "é dono" de uma aba quando ela está
+ * entre as abas atribuídas a ele (SESSION.abas — agora pode ser mais
+ * de uma). Donos podem adicionar e remover atividades/registros
+ * dentro das PRÓPRIAS abas — mas não excluir a aba em si, nem mexer
+ * em outras abas (isso continua exclusivo do administrador, e é
+ * sempre verificado no servidor também, não só aqui).
  */
 /**
  * Mapeia uma chave interna do dashboard (como usada em LOG_CONFIGS/
@@ -1071,9 +1071,14 @@ function clientKeyToTabId(key){
   return key; // abas personalizadas: a própria chave já é o tabId
 }
 
+function allowedTabsForSession(){
+  if(SESSION && SESSION.abas && SESSION.abas.length) return SESSION.abas;
+  return ['geral'];
+}
+
 function isOwnerOfTab(tabId){
   if(!SESSION || SESSION.papel === 'adm') return false;
-  return (SESSION.aba || 'geral') === tabId;
+  return allowedTabsForSession().indexOf(tabId) !== -1;
 }
 
 function canManageTab(tabId){
@@ -1096,8 +1101,8 @@ function applyRolePermissions(){
 }
 
 /**
- * Restringe a navegação de quem não é administrador a uma única aba
- * (SESSION.aba). Deve ser chamada depois que TODAS as abas (inclusive
+ * Restringe a navegação de quem não é administrador às abas atribuídas
+ * a ele (SESSION.abas — pode ser mais de uma). Deve ser chamada depois que TODAS as abas (inclusive
  * as personalizadas) já foram montadas no menu, para conseguir escondê-
  * las corretamente. A validação de verdade acontece no servidor — isso
  * aqui só ajusta a interface para não mostrar botões que dariam erro.
@@ -1107,30 +1112,31 @@ function applyTabAccess(){
   const isAdmin = !!(SESSION && SESSION.papel === 'adm');
   if(isAdmin) return; // administrador vê todas as abas
 
-  const allowed = (SESSION && SESSION.aba) ? SESSION.aba : 'geral';
-  const inOperacionalGroup = OPERACIONAL_GROUP_IDS.indexOf(allowed) !== -1;
+  const allowed = allowedTabsForSession();
+  const inOperacionalGroup = OPERACIONAL_GROUP_IDS.some(id => allowed.indexOf(id) !== -1);
 
   const opGroupBtn = document.getElementById('nav-operacional-group');
   if(opGroupBtn) opGroupBtn.style.display = inOperacionalGroup ? '' : 'none';
 
   OPERACIONAL_GROUP_IDS.forEach(function(tabId){
     const innerBtn = document.getElementById('opsub-' + tabId);
-    if(innerBtn) innerBtn.style.display = (tabId === allowed) ? '' : 'none';
+    if(innerBtn) innerBtn.style.display = (allowed.indexOf(tabId) !== -1) ? '' : 'none';
   });
 
   const coordBtn = document.getElementById('nav-coordenacao-group');
-  if(coordBtn) coordBtn.style.display = (allowed === 'coordenacao') ? '' : 'none';
+  if(coordBtn) coordBtn.style.display = (allowed.indexOf('coordenacao') !== -1) ? '' : 'none';
 
   const nav = document.getElementById('mainnav');
   const buttons = nav.querySelectorAll('button[id^="nav-"]');
   buttons.forEach(function(btn){
     if(['nav-add-tab','nav-operacional-group','nav-coordenacao-group'].indexOf(btn.id) !== -1) return;
     const tabId = btn.id.replace('nav-', '');
-    btn.style.display = (tabId === allowed) ? '' : 'none';
+    btn.style.display = (allowed.indexOf(tabId) !== -1) ? '' : 'none';
   });
 
-  if(document.getElementById('view-' + allowed)){
-    showView(allowed);
+  const firstAllowed = allowed[0];
+  if(firstAllowed && document.getElementById('view-' + firstAllowed)){
+    showView(firstAllowed);
   }
 }
 
@@ -1166,7 +1172,7 @@ async function doLogin(){
     return;
   }
 
-  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel, aba: json.aba || '' };
+  SESSION = { token: json.token, email: email, nome: json.nome, papel: json.papel, abas: json.abas || [] };
   await setStoredSession(SESSION);
   showApp();
   await init(true);
@@ -1224,7 +1230,7 @@ function resetUserForm(){
   document.getElementById('newUserSenhaLabel').textContent = 'Senha provisória';
   document.getElementById('newUserSenha').placeholder = 'mínimo 6 caracteres';
   document.getElementById('newUserPapel').value = 'editor';
-  populateAbaOptions();
+  populateAbaOptions([]);
   toggleNewUserAbaField();
   document.getElementById('userFormSubmitBtn').textContent = 'Criar usuário';
   document.getElementById('userFormCancelBtn').style.display = 'none';
@@ -1241,8 +1247,8 @@ function editUserAccount(email, nome, papel, aba){
   document.getElementById('newUserSenhaLabel').textContent = 'Nova senha (opcional)';
   document.getElementById('newUserSenha').placeholder = 'deixe em branco para manter a senha atual';
   document.getElementById('newUserPapel').value = (papel === 'adm') ? 'adm' : 'editor';
-  populateAbaOptions();
-  if(aba) document.getElementById('newUserAba').value = aba;
+  const selectedIds = String(aba || '').split(',').map(s => s.trim()).filter(Boolean);
+  populateAbaOptions(selectedIds);
   toggleNewUserAbaField();
   document.getElementById('userFormSubmitBtn').textContent = 'Salvar alterações';
   document.getElementById('userFormCancelBtn').style.display = '';
@@ -1266,9 +1272,27 @@ function tabLabelForId(id){
   return found ? found.label : (id || 'Operacional');
 }
 
-function populateAbaOptions(){
-  const sel = document.getElementById('newUserAba');
-  sel.innerHTML = getTabOptionsList().map(o => `<option value="${o.id}">${o.label}</option>`).join('');
+function tabLabelsForIds(abaString){
+  const ids = String(abaString || '').split(',').map(s => s.trim()).filter(Boolean);
+  if(ids.length === 0) return tabLabelForId('geral');
+  return ids.map(id => tabLabelForId(id)).join(', ');
+}
+
+function populateAbaOptions(selectedIds){
+  selectedIds = selectedIds || [];
+  const container = document.getElementById('newUserAbaCheckboxes');
+  container.innerHTML = getTabOptionsList().map(o => {
+    const checked = selectedIds.indexOf(o.id) !== -1 ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;margin-bottom:8px;cursor:pointer;">
+      <input type="checkbox" value="${o.id}" ${checked} style="width:15px;height:15px;">
+      ${o.label}
+    </label>`;
+  }).join('');
+}
+
+function getSelectedAbaIds(){
+  const container = document.getElementById('newUserAbaCheckboxes');
+  return Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
 }
 
 function toggleNewUserAbaField(){
@@ -1291,7 +1315,7 @@ async function loadUsersList(){
       const isAdmUser = u.papel === 'adm';
       const roleClass = isAdmUser ? 'u-role role-adm' : 'u-role';
       const roleLabel = isAdmUser ? 'Administrador' : (u.papel || 'editor');
-      const abaLabel = isAdmUser ? 'Todas as abas' : tabLabelForId(u.aba || 'geral');
+      const abaLabel = isAdmUser ? 'Todas as abas' : tabLabelsForIds(u.aba || 'geral');
       const safeEmail = u.email.replace(/'/g,"\\'");
       const safeNome = (u.nome||'').replace(/'/g,"\\'");
       const editBtn = `<button class="rowdel" style="color:var(--steel);" onclick="editUserAccount('${safeEmail}','${safeNome}','${u.papel}','${u.aba||''}')">Editar</button>`;
@@ -1326,10 +1350,15 @@ async function submitUserForm(){
   const email = document.getElementById('newUserEmail').value.trim();
   const senha = document.getElementById('newUserSenha').value;
   const papel = document.getElementById('newUserPapel').value;
-  const aba = document.getElementById('newUserAba').value;
+  const aba = getSelectedAbaIds().join(',');
 
   if(!nome || !email){
     errEl.textContent = 'Preencha nome e e-mail.';
+    return;
+  }
+
+  if(papel !== 'adm' && !aba){
+    errEl.textContent = 'Selecione ao menos uma aba de acesso.';
     return;
   }
 
