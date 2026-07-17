@@ -381,6 +381,42 @@
     border-color:var(--red);
   }
   .checklist-item-long.bad .ci-text{color:#8A2E22;}
+
+  .indic-meta-hint{
+    font-size:10.5px;
+    color:var(--ink-soft);
+    font-style:italic;
+    margin-top:4px;
+  }
+  .indic-progress{margin-top:6px;}
+  .indic-progress-track{
+    height:6px;
+    background:var(--gray-light);
+    border-radius:4px;
+    overflow:hidden;
+    margin-bottom:5px;
+  }
+  .indic-progress-fill{height:100%;border-radius:4px;}
+  .indic-progress-nums{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    font-size:11px;
+    color:var(--ink-soft);
+  }
+  .indic-progress-nums input{
+    width:52px;
+    padding:3px 5px;
+    font-size:11px;
+    border:1px solid var(--line);
+    border-radius:5px;
+    font-family:inherit;
+  }
+  .indic-progress-pct{
+    margin-left:auto;
+    font-weight:700;
+    color:var(--ink);
+  }
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -641,7 +677,7 @@
     .wrap{padding:16px 14px 60px;}
     .topbar{padding:20px 18px;border-radius:12px;}
     .topbar h1{font-size:21px;}
-    .topbar .actions{width:100%;}
+    .topbar .actions{width:100%;flex-wrap:wrap;}
     .topbar .actions .btn{flex:1 1 auto;font-size:12px;padding:9px 10px;}
     .stats{grid-template-columns:repeat(2,1fr);}
     .mainnav{overflow-x:auto;flex-wrap:nowrap;}
@@ -649,11 +685,20 @@
     .card{padding:16px 16px;}
     .modal-form-grid{grid-template-columns:1fr;}
     .modal-card{padding:22px 18px;}
+    .filters-row .filters-right{width:100%;}
+    .search-box{min-width:0;flex:1 1 auto;}
     .field textarea, .field input,
     .modal-form-grid input, .modal-form-grid select,
     .login-field input, table.logtable input, table.logtable textarea{
       font-size:16px; /* impede o iOS Safari de dar zoom ao focar o campo */
     }
+  }
+
+  /* Proteção geral: nunca deixa a PÁGINA inteira rolar de lado — só
+     elementos específicos (tabelas, quadro Kanban) rolam internamente. */
+  html, body{
+    max-width:100%;
+    overflow-x:hidden;
   }
 
   .login-screen{
@@ -920,10 +965,19 @@
         <input type="text" id="newActEmails" placeholder="separados por vírgula">
       </div>
       <div class="full">
-        <label>Indicador chave</label>
+        <label>Indicador chave (descrição)</label>
         <input type="text" id="newActIndicador" placeholder="ex: % de contratos revisados no prazo">
       </div>
+      <div>
+        <label>Meta do indicador (número)</label>
+        <input type="number" id="newActIndicadorMeta" placeholder="ex: 100" step="any">
+      </div>
+      <div>
+        <label>Valor atual (número)</label>
+        <input type="number" id="newActIndicadorAtual" placeholder="ex: 0" step="any">
+      </div>
     </div>
+    <p class="modal-sub" style="margin:8px 0 0;">Preenchendo meta e valor atual, o card mostra uma barra de progresso calculada automaticamente (valor atual ÷ meta). Deixe em branco se o indicador não for um número simples de medir.</p>
     <p class="modal-error" id="newActError"></p>
     <button class="btn login-btn" style="width:auto;padding:9px 18px;" id="newActSubmitBtn" onclick="submitNewActivity()">Adicionar atividade</button>
   </div>
@@ -1889,6 +1943,8 @@ function openNewActivityModal(boardKey){
   document.getElementById('newActPrazo').value = '';
   document.getElementById('newActEmails').value = '';
   document.getElementById('newActIndicador').value = '';
+  document.getElementById('newActIndicadorMeta').value = '';
+  document.getElementById('newActIndicadorAtual').value = '';
   document.getElementById('newActivityModal').classList.add('active');
 }
 
@@ -1911,6 +1967,8 @@ function openEditActivityModal(boardKey, id){
   document.getElementById('newActPrazo').value = item.prazo || '';
   document.getElementById('newActEmails').value = item.emails || '';
   document.getElementById('newActIndicador').value = item.indicador || '';
+  document.getElementById('newActIndicadorMeta').value = item.indicadorMeta || '';
+  document.getElementById('newActIndicadorAtual').value = item.indicadorAtual || '';
   document.getElementById('newActivityModal').classList.add('active');
 }
 
@@ -1935,6 +1993,8 @@ async function submitNewActivity(){
   const prazo = document.getElementById('newActPrazo').value;
   const emails = document.getElementById('newActEmails').value.trim();
   const indicador = document.getElementById('newActIndicador').value.trim();
+  const indicadorMeta = document.getElementById('newActIndicadorMeta').value;
+  const indicadorAtual = document.getElementById('newActIndicadorAtual').value;
 
   if(!area || !title){
     errEl.textContent = 'Preencha ao menos a área e o título da atividade.';
@@ -1955,6 +2015,8 @@ async function submitNewActivity(){
     item.prazo = prazo;
     item.emails = emails;
     item.indicador = indicador;
+    item.indicadorMeta = indicadorMeta;
+    item.indicadorAtual = indicadorAtual;
 
     if(activeActivityBoardKey === 'geral'){
       await save();
@@ -1977,6 +2039,8 @@ async function submitNewActivity(){
     responsavel: responsavel || (SESSION ? SESSION.nome : ''),
     prazo: prazo,
     indicador: indicador,
+    indicadorMeta: indicadorMeta,
+    indicadorAtual: indicadorAtual,
     emails: emails
   };
 
@@ -2726,6 +2790,8 @@ function buildActivityCardHtml(item, boardKey){
   const nextHandler = isGeral ? `updateField(${item.id},'next',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'next',this.value)`;
   const prazoHandler = isGeral ? `updateField(${item.id},'prazo',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'prazo',this.value)`;
   const emailsHandler = isGeral ? `updateField(${item.id},'emails',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'emails',this.value)`;
+  const indicadorMetaHandler = isGeral ? `updateField(${item.id},'indicadorMeta',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'indicadorMeta',this.value)`;
+  const indicadorAtualHandler = isGeral ? `updateField(${item.id},'indicadorAtual',this.value)` : `updateActivityBoardField('${boardKey}', ${item.id},'indicadorAtual',this.value)`;
   const deleteHandler = isGeral ? `deleteActivity(${item.id})` : `deleteActivityBoardItem('${boardKey}', ${item.id})`;
   const deleteBtn = canDelete
     ? `<button class="rowdel" style="margin-top:6px;" onclick="${deleteHandler}">Remover atividade</button>`
@@ -2769,7 +2835,27 @@ function buildActivityCardHtml(item, boardKey){
         </div>
         <div class="field">
           <label>Indicador chave</label>
-          <div class="indic">${item.indicador}</div>
+          <div class="indic">${item.indicador || '—'}</div>
+          ${(() => {
+            const meta = parseFloat(item.indicadorMeta);
+            const atual = parseFloat(item.indicadorAtual) || 0;
+            if(!meta || meta <= 0){
+              return `<div class="indic-meta-hint">Sem meta numérica definida (edite a atividade pra medir)</div>`;
+            }
+            const pct = Math.max(0, Math.min(100, Math.round((atual / meta) * 100)));
+            const barColor = pct >= 100 ? 'var(--sage)' : (pct >= 50 ? 'var(--steel)' : 'var(--amber)');
+            return `
+              <div class="indic-progress">
+                <div class="indic-progress-track"><div class="indic-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
+                <div class="indic-progress-nums">
+                  <input type="number" step="any" value="${item.indicadorAtual || 0}" onchange="${indicadorAtualHandler}" title="Valor atual">
+                  <span>/</span>
+                  <input type="number" step="any" value="${item.indicadorMeta || ''}" onchange="${indicadorMetaHandler}" title="Meta">
+                  <span class="indic-progress-pct">${pct}%</span>
+                </div>
+              </div>
+            `;
+          })()}
         </div>
       </div>
       <div class="field field-emails">
