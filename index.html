@@ -316,6 +316,38 @@
   .notif-item .ni-meta{font-size:11px;color:var(--ink-soft);margin-top:2px;}
   .notif-item .ni-meta.overdue{color:var(--red);font-weight:700;}
   .notif-empty{font-size:12px;color:var(--ink-soft);padding:16px 10px;text-align:center;}
+
+  .checklist-items-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+    gap:4px 16px;
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid var(--line);
+  }
+  .checklist-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    font-size:11.5px;
+    padding:5px 6px;
+    border-radius:6px;
+  }
+  .checklist-item span:first-child{
+    color:var(--ink-soft);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .checklist-item .checklist-item-val{
+    font-weight:700;
+    color:var(--sage);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .checklist-item.bad{background:var(--red-light);}
+  .checklist-item.bad .checklist-item-val{color:var(--red);}
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -2413,12 +2445,17 @@ function computeNotifications(){
   return relevant;
 }
 
+function computeChecklistAlerts(){
+  if(!checklistResponses || !checklistResponses.length) return [];
+  return checklistResponses.filter(rowHasNaoConforme);
+}
+
 function updateNotifBadge(){
   const badge = document.getElementById('notifCount');
   if(!badge) return;
-  const list = computeNotifications();
-  if(list.length > 0){
-    badge.textContent = list.length;
+  const total = computeNotifications().length + computeChecklistAlerts().length;
+  if(total > 0){
+    badge.textContent = total;
     badge.style.display = '';
   }else{
     badge.style.display = 'none';
@@ -2477,29 +2514,52 @@ window.addEventListener('resize', function(){
 function renderNotifPanel(){
   const panel = document.getElementById('notifPanel');
   const list = computeNotifications();
+  const checklistAlerts = computeChecklistAlerts();
   const today = new Date(); today.setHours(0,0,0,0);
 
-  if(list.length === 0){
-    panel.innerHTML = '<p class="notif-empty">Nenhum prazo atrasado ou próximo. 🎉</p>';
+  if(list.length === 0 && checklistAlerts.length === 0){
+    panel.innerHTML = '<p class="notif-empty">Nada pendente no momento. 🎉</p>';
     return;
   }
 
-  panel.innerHTML = '<h4>Atrasadas ou vencendo em até 3 dias</h4>' + list.map(entry => {
-    const it = entry.item;
-    const d = new Date(it.prazo + 'T00:00:00');
-    const overdue = d < today;
-    const diffDays = Math.round((d - today) / 86400000);
-    const label = overdue
-      ? 'Atrasada há ' + Math.abs(diffDays) + (Math.abs(diffDays) === 1 ? ' dia' : ' dias')
-      : (diffDays === 0 ? 'Vence hoje' : 'Vence em ' + diffDays + (diffDays === 1 ? ' dia' : ' dias'));
-    const safeTitle = String(it.title || '(sem título)').replace(/</g,'&lt;');
-    return `
-      <button class="notif-item" onclick="goToNotification('${entry.boardKey}')">
-        <div class="ni-title">${safeTitle}</div>
-        <div class="ni-meta ${overdue ? 'overdue' : ''}">${entry.boardLabel} · ${label}</div>
-      </button>
-    `;
-  }).join('');
+  let html = '';
+
+  if(list.length > 0){
+    html += '<h4>Atrasadas ou vencendo em até 3 dias</h4>' + list.map(entry => {
+      const it = entry.item;
+      const d = new Date(it.prazo + 'T00:00:00');
+      const overdue = d < today;
+      const diffDays = Math.round((d - today) / 86400000);
+      const label = overdue
+        ? 'Atrasada há ' + Math.abs(diffDays) + (Math.abs(diffDays) === 1 ? ' dia' : ' dias')
+        : (diffDays === 0 ? 'Vence hoje' : 'Vence em ' + diffDays + (diffDays === 1 ? ' dia' : ' dias'));
+      const safeTitle = String(it.title || '(sem título)').replace(/</g,'&lt;');
+      return `
+        <button class="notif-item" onclick="goToNotification('${entry.boardKey}')">
+          <div class="ni-title">${safeTitle}</div>
+          <div class="ni-meta ${overdue ? 'overdue' : ''}">${entry.boardLabel} · ${label}</div>
+        </button>
+      `;
+    }).join('');
+  }
+
+  if(checklistAlerts.length > 0){
+    const findHeader = (row, regex) => Object.keys(row).find(h => normalizeHeader(h).match(regex));
+    html += '<h4>Checklist veicular com item não conforme</h4>' + checklistAlerts.slice().reverse().map(row => {
+      const titleKey = findHeader(row, /veiculo/);
+      const dataKey = findHeader(row, /^data$/);
+      const title = (titleKey && row[titleKey]) ? row[titleKey] : 'Checklist veicular';
+      const dataStr = (dataKey && row[dataKey]) ? String(row[dataKey]).slice(0,10) : '';
+      return `
+        <button class="notif-item" onclick="goToNotification('coordenacao')">
+          <div class="ni-title">${title}</div>
+          <div class="ni-meta overdue">Operacional II · ${dataStr}</div>
+        </button>
+      `;
+    }).join('');
+  }
+
+  panel.innerHTML = html;
 }
 
 function goToNotification(boardKey){
@@ -2712,6 +2772,20 @@ let checklistResponses = [];
  * Google Forms, vinculada à planilha). Não tem edição por aqui —
  * quem preenche o checklist usa o link "Preencher novo checklist".
  */
+function normalizeHeader(h){
+  return String(h).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+
+function isNaoConforme(val){
+  if(!val) return false;
+  const norm = normalizeHeader(val);
+  return norm.indexOf('nao conforme') !== -1;
+}
+
+function rowHasNaoConforme(row){
+  return Object.keys(row).some(k => isNaoConforme(row[k]));
+}
+
 function renderChecklistResults(){
   const container = document.getElementById('checklist-results-container');
   if(!container) return;
@@ -2731,21 +2805,56 @@ function renderChecklistResults(){
   }
 
   const headers = Object.keys(checklistResponses[0]);
-  const rowsHtml = checklistResponses.slice().reverse().map(row => {
-    const tds = headers.map(h => `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`).join('');
-    return `<tr>${tds}</tr>`;
+  const findHeader = (regex) => headers.find(h => regex.test(normalizeHeader(h)));
+  const titleKey = findHeader(/veiculo/);
+  const kmKey = findHeader(/(^|\s)km(\s|$)/);
+  const respKey = findHeader(/respons/);
+  const dataKey = findHeader(/^data$/);
+  const timestampKey = findHeader(/carimbo/);
+  const emailKey = findHeader(/e-?mail/);
+  const metaKeysUsed = [titleKey, kmKey, respKey, dataKey, timestampKey, emailKey].filter(Boolean);
+  const itemKeys = headers.filter(h => metaKeysUsed.indexOf(h) === -1);
+
+  const totalNaoConforme = checklistResponses.filter(rowHasNaoConforme).length;
+
+  const cardsHtml = checklistResponses.slice().reverse().map(row => {
+    const alertItems = itemKeys.filter(k => isNaoConforme(row[k]));
+    const isAlert = alertItems.length > 0;
+    const title = (titleKey && row[titleKey]) ? row[titleKey] : 'Checklist';
+    const metaParts = [];
+    if(dataKey && row[dataKey]) metaParts.push(String(row[dataKey]).slice(0,10));
+    if(kmKey && row[kmKey]) metaParts.push('KM ' + row[kmKey]);
+    if(respKey && row[respKey]) metaParts.push(row[respKey]);
+    const itemsHtml = itemKeys.map(k => {
+      const val = row[k] !== undefined && row[k] !== null ? row[k] : '';
+      const bad = isNaoConforme(val);
+      return `<div class="checklist-item ${bad?'bad':''}"><span>${k}</span><span class="checklist-item-val">${val || '—'}</span></div>`;
+    }).join('');
+
+    return `
+      <div class="card" style="${isAlert ? 'border-color:var(--red);border-width:1.5px;' : ''}">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag" style="${isAlert ? 'background:var(--red-light);color:#8A2E22;' : 'background:var(--sage-light);color:#2C6B45;'}">
+                ${isAlert ? '⚠️ Não conforme' : '✅ Conforme'}
+              </span>
+              <span class="card-title">${title}</span>
+            </div>
+            <div class="card-sub">${metaParts.join(' · ')}</div>
+          </div>
+        </div>
+        <div class="checklist-items-grid">${itemsHtml}</div>
+      </div>
+    `;
   }).join('');
 
   container.innerHTML = `
-    <div class="stats" style="grid-template-columns:repeat(1,1fr);max-width:240px;margin-bottom:16px;">
+    <div class="stats" style="grid-template-columns:repeat(2,1fr);max-width:420px;margin-bottom:16px;">
       <div class="stat total"><div class="num">${checklistResponses.length}</div><div class="lbl">Respostas registradas</div></div>
+      <div class="stat s-atraso"><div class="num">${totalNaoConforme}</div><div class="lbl">Com item não conforme</div></div>
     </div>
-    <div class="logtable-wrap" style="overflow-x:auto;">
-      <table class="logtable">
-        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-    </div>
+    <div class="cards">${cardsHtml}</div>
   `;
 }
 
@@ -3140,6 +3249,7 @@ async function bulkLoadInitialData(){
     });
   }
 
+  updateNotifBadge();
   document.getElementById('lastUpdate').textContent =
     "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
 }
