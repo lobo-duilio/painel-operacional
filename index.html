@@ -890,8 +890,8 @@
 <div id="newActivityModal" class="modal-overlay">
   <div class="modal-card">
     <button class="modal-close" onclick="closeNewActivityModal()">&times;</button>
-    <h2>Nova atividade</h2>
-    <p class="modal-sub">Adiciona um item novo ao Painel Geral. Preencha ao menos a área e o título.</p>
+    <h2 id="newActivityModalTitle">Nova atividade</h2>
+    <p class="modal-sub" id="newActivityModalSub">Adiciona um item novo ao Painel Geral. Preencha ao menos a área e o título.</p>
 
     <div class="modal-form-grid">
       <div>
@@ -925,7 +925,7 @@
       </div>
     </div>
     <p class="modal-error" id="newActError"></p>
-    <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="submitNewActivity()">Adicionar atividade</button>
+    <button class="btn login-btn" style="width:auto;padding:9px 18px;" id="newActSubmitBtn" onclick="submitNewActivity()">Adicionar atividade</button>
   </div>
 </div>
 
@@ -1873,9 +1873,14 @@ function setFilter(a){
 /* ---- Nova atividade (Painel Geral) ---- */
 
 let activeActivityBoardKey = 'geral';
+let editingActivityId = null;
 
 function openNewActivityModal(boardKey){
   activeActivityBoardKey = boardKey || 'geral';
+  editingActivityId = null;
+  document.getElementById('newActivityModalTitle').textContent = 'Nova atividade';
+  document.getElementById('newActivityModalSub').textContent = 'Adiciona um item novo ao Painel Geral. Preencha ao menos a área e o título.';
+  document.getElementById('newActSubmitBtn').textContent = 'Adicionar atividade';
   document.getElementById('newActError').textContent = '';
   document.getElementById('newActArea').value = '';
   document.getElementById('newActResponsavel').value = '';
@@ -1887,8 +1892,31 @@ function openNewActivityModal(boardKey){
   document.getElementById('newActivityModal').classList.add('active');
 }
 
+/** Abre o mesmo formulário da "Nova atividade", mas preenchido e em modo de edição. */
+function openEditActivityModal(boardKey, id){
+  const items = boardKey === 'geral' ? data : (logData[boardKey] || []);
+  const item = items.find(d => d.id === id);
+  if(!item) return;
+
+  activeActivityBoardKey = boardKey;
+  editingActivityId = id;
+  document.getElementById('newActivityModalTitle').textContent = 'Editar atividade';
+  document.getElementById('newActivityModalSub').textContent = 'Altere os campos que quiser e salve.';
+  document.getElementById('newActSubmitBtn').textContent = 'Salvar alterações';
+  document.getElementById('newActError').textContent = '';
+  document.getElementById('newActArea').value = item.area || '';
+  document.getElementById('newActResponsavel').value = item.responsavel || '';
+  document.getElementById('newActTitle').value = item.title || '';
+  document.getElementById('newActNext').value = item.next || '';
+  document.getElementById('newActPrazo').value = item.prazo || '';
+  document.getElementById('newActEmails').value = item.emails || '';
+  document.getElementById('newActIndicador').value = item.indicador || '';
+  document.getElementById('newActivityModal').classList.add('active');
+}
+
 function closeNewActivityModal(){
   document.getElementById('newActivityModal').classList.remove('active');
+  editingActivityId = null;
 }
 
 async function submitNewActivity(){
@@ -1896,7 +1924,7 @@ async function submitNewActivity(){
   errEl.textContent = '';
 
   if(!canManageTab(activeActivityBoardKey)){
-    errEl.textContent = 'Você não tem permissão para criar atividades nesta aba.';
+    errEl.textContent = 'Você não tem permissão para ' + (editingActivityId ? 'editar' : 'criar') + ' atividades nesta aba.';
     return;
   }
 
@@ -1910,6 +1938,33 @@ async function submitNewActivity(){
 
   if(!area || !title){
     errEl.textContent = 'Preencha ao menos a área e o título da atividade.';
+    return;
+  }
+
+  if(editingActivityId){
+    const items = activeActivityBoardKey === 'geral' ? data : (logData[activeActivityBoardKey] || []);
+    const item = items.find(d => d.id === editingActivityId);
+    if(!item){
+      errEl.textContent = 'Atividade não encontrada (pode ter sido removida).';
+      return;
+    }
+    item.area = area;
+    item.title = title;
+    item.responsavel = responsavel;
+    item.next = next;
+    item.prazo = prazo;
+    item.emails = emails;
+    item.indicador = indicador;
+
+    if(activeActivityBoardKey === 'geral'){
+      await save();
+      renderGeral();
+    }else{
+      await saveLog(activeActivityBoardKey);
+      renderActivityBoard(activeActivityBoardKey);
+    }
+
+    closeNewActivityModal();
     return;
   }
 
@@ -2676,6 +2731,11 @@ function buildActivityCardHtml(item, boardKey){
     ? `<button class="rowdel" style="margin-top:6px;" onclick="${deleteHandler}">Remover atividade</button>`
     : '';
 
+  const canEdit = canManageTab(boardKey);
+  const editBtn = canEdit
+    ? `<button class="rowdel" style="margin-top:6px;color:var(--steel);" onclick="openEditActivityModal('${boardKey}', ${item.id})">Editar atividade</button>`
+    : '';
+
   return `
     <div class="card">
       <div class="card-top">
@@ -2690,6 +2750,7 @@ function buildActivityCardHtml(item, boardKey){
           <select class="status-select" onchange="${statusHandler}" style="color:${color};border-color:${color}55">
             ${STAGES.map(s=>`<option value="${s}" ${s===item.status?'selected':''}>${s}</option>`).join('')}
           </select>
+          ${editBtn}
           ${deleteBtn}
         </div>
       </div>
