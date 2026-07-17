@@ -348,6 +348,39 @@
   }
   .checklist-item.bad{background:var(--red-light);}
   .checklist-item.bad .checklist-item-val{color:var(--red);}
+
+  .checklist-long-wrap{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-top:10px;
+  }
+  .checklist-item-long{
+    font-size:12px;
+    padding:9px 11px;
+    border-radius:8px;
+    background:#FAF9F5;
+    border:1px solid var(--line);
+  }
+  .checklist-item-long .ci-label{
+    font-size:10px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    color:var(--ink-soft);
+    margin-bottom:4px;
+  }
+  .checklist-item-long .ci-text{
+    color:var(--ink);
+    line-height:1.45;
+    white-space:normal;
+    word-break:break-word;
+  }
+  .checklist-item-long.bad{
+    background:var(--red-light);
+    border-color:var(--red);
+  }
+  .checklist-item-long.bad .ci-text{color:#8A2E22;}
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -2548,8 +2581,8 @@ function renderNotifPanel(){
     html += '<h4>Checklist veicular com item não conforme</h4>' + checklistAlerts.slice().reverse().map(row => {
       const titleKey = findHeader(row, /veiculo/);
       const dataKey = findHeader(row, /^data$/);
-      const title = (titleKey && row[titleKey]) ? row[titleKey] : 'Checklist veicular';
-      const dataStr = (dataKey && row[dataKey]) ? String(row[dataKey]).slice(0,10) : '';
+      const title = escapeHtml((titleKey && row[titleKey]) ? row[titleKey] : 'Checklist veicular');
+      const dataStr = escapeHtml((dataKey && row[dataKey]) ? String(row[dataKey]).slice(0,10) : '');
       return `
         <button class="notif-item" onclick="goToNotification('coordenacao')">
           <div class="ni-title">${title}</div>
@@ -2776,6 +2809,13 @@ function normalizeHeader(h){
   return String(h).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 }
 
+function escapeHtml(str){
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
 function isNaoConforme(val){
   if(!val) return false;
   const norm = normalizeHeader(val);
@@ -2820,16 +2860,32 @@ function renderChecklistResults(){
   const cardsHtml = checklistResponses.slice().reverse().map(row => {
     const alertItems = itemKeys.filter(k => isNaoConforme(row[k]));
     const isAlert = alertItems.length > 0;
-    const title = (titleKey && row[titleKey]) ? row[titleKey] : 'Checklist';
+    const title = escapeHtml((titleKey && row[titleKey]) ? row[titleKey] : 'Checklist');
     const metaParts = [];
-    if(dataKey && row[dataKey]) metaParts.push(String(row[dataKey]).slice(0,10));
-    if(kmKey && row[kmKey]) metaParts.push('KM ' + row[kmKey]);
-    if(respKey && row[respKey]) metaParts.push(row[respKey]);
-    const itemsHtml = itemKeys.map(k => {
-      const val = row[k] !== undefined && row[k] !== null ? row[k] : '';
-      const bad = isNaoConforme(val);
-      return `<div class="checklist-item ${bad?'bad':''}"><span>${k}</span><span class="checklist-item-val">${val || '—'}</span></div>`;
-    }).join('');
+    if(dataKey && row[dataKey]) metaParts.push(escapeHtml(String(row[dataKey]).slice(0,10)));
+    if(kmKey && row[kmKey]) metaParts.push('KM ' + escapeHtml(row[kmKey]));
+    if(respKey && row[respKey]) metaParts.push(escapeHtml(row[respKey]));
+
+    // Respostas curtas (ok/Não conforme/números) vão na grade compacta;
+    // textos livres longos (observações, problemas relatados) ganham
+    // bloco próprio embaixo, com quebra de linha normal — evita que um
+    // texto longo vaze por cima do item vizinho na grade.
+    const compactHtml = [];
+    const longHtml = [];
+    itemKeys.forEach(k => {
+      const raw = row[k] !== undefined && row[k] !== null ? String(row[k]) : '';
+      const bad = isNaoConforme(raw);
+      if(raw.length > 24){
+        longHtml.push(`
+          <div class="checklist-item-long ${bad?'bad':''}">
+            <div class="ci-label">${escapeHtml(k)}</div>
+            <div class="ci-text">${escapeHtml(raw)}</div>
+          </div>
+        `);
+      }else{
+        compactHtml.push(`<div class="checklist-item ${bad?'bad':''}"><span>${escapeHtml(k)}</span><span class="checklist-item-val">${escapeHtml(raw) || '—'}</span></div>`);
+      }
+    });
 
     return `
       <div class="card" style="${isAlert ? 'border-color:var(--red);border-width:1.5px;' : ''}">
@@ -2844,7 +2900,8 @@ function renderChecklistResults(){
             <div class="card-sub">${metaParts.join(' · ')}</div>
           </div>
         </div>
-        <div class="checklist-items-grid">${itemsHtml}</div>
+        <div class="checklist-items-grid">${compactHtml.join('')}</div>
+        ${longHtml.length ? `<div class="checklist-long-wrap">${longHtml.join('')}</div>` : ''}
       </div>
     `;
   }).join('');
