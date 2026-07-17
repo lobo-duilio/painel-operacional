@@ -150,6 +150,123 @@
     margin-bottom:20px;
   }
   .filters-row .filters{margin-bottom:0;flex:1;}
+  .filters-row .filters-right{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .search-box{
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:12.5px;
+    min-width:200px;
+    background:#FCFCFA;
+    font-family:inherit;
+  }
+  .view-toggle{
+    display:flex;
+    gap:2px;
+    background:var(--gray-light);
+    border-radius:8px;
+    padding:3px;
+  }
+  .view-toggle button{
+    border:none;
+    background:transparent;
+    padding:6px 12px;
+    font-size:11.5px;
+    font-weight:700;
+    border-radius:6px;
+    cursor:pointer;
+    color:var(--ink-soft);
+  }
+  .view-toggle button.active{
+    background:var(--panel);
+    color:var(--navy);
+    box-shadow:0 1px 2px rgba(0,0,0,.08);
+  }
+  .kanban-board{
+    display:flex;
+    gap:12px;
+    overflow-x:auto;
+    padding-bottom:10px;
+  }
+  .kanban-col{
+    flex:0 0 250px;
+    background:#F1F0EA;
+    border-radius:10px;
+    padding:10px;
+    min-height:140px;
+  }
+  .kanban-col-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:10.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    padding:4px 4px 10px;
+  }
+  .kanban-count{
+    background:var(--panel);
+    border-radius:20px;
+    padding:1px 8px;
+    font-size:10.5px;
+    font-weight:700;
+  }
+  .kanban-col-body{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    min-height:70px;
+  }
+  .kanban-col-body.drag-over{
+    background:rgba(46,109,164,0.08);
+    border-radius:8px;
+  }
+  .kanban-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px 12px;
+    cursor:grab;
+    box-shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  .kanban-card:active{cursor:grabbing;}
+  .kanban-card.dragging{opacity:0.4;}
+  .kanban-card-area{
+    font-size:9.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    color:var(--steel);
+    margin-bottom:4px;
+  }
+  .kanban-card-title{
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--ink);
+    margin-bottom:6px;
+    line-height:1.35;
+  }
+  .kanban-card-meta{
+    display:flex;
+    justify-content:space-between;
+    gap:6px;
+    font-size:10px;
+    color:var(--ink-soft);
+  }
+  .kanban-empty{
+    font-size:11px;
+    color:var(--ink-soft);
+    text-align:center;
+    padding:16px 0;
+    margin:0;
+  }
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -774,7 +891,14 @@
     <div class="stats" id="stats"></div>
     <div class="filters-row">
       <div class="filters" id="filters"></div>
-      <button class="btn" id="newActivityBtn" onclick="openNewActivityModal()">+ Nova atividade</button>
+      <div class="filters-right">
+        <input type="text" class="search-box" placeholder="Buscar por título ou responsável…" oninput="setSearchQuery('geral', this.value)">
+        <div class="view-toggle" id="viewToggle-geral">
+          <button class="active" onclick="setBoardViewMode('geral','list')">☰ Lista</button>
+          <button onclick="setBoardViewMode('geral','board')">▦ Quadro</button>
+        </div>
+        <button class="btn" id="newActivityBtn" onclick="openNewActivityModal()">+ Nova atividade</button>
+      </div>
     </div>
     <div class="cards" id="cards"></div>
   </div>
@@ -1870,7 +1994,14 @@ function mountActivityBoard(tabDef){
     '<div class="stats" id="stats-' + tabDef.key + '"></div>' +
     '<div class="filters-row">' +
       '<div class="filters" id="filters-' + tabDef.key + '"></div>' +
-      newActivityBtnHtml +
+      '<div class="filters-right">' +
+        '<input type="text" class="search-box" placeholder="Buscar por título ou responsável…" oninput="setSearchQuery(\'' + tabDef.key + '\', this.value)">' +
+        '<div class="view-toggle" id="viewToggle-' + tabDef.key + '">' +
+          '<button class="active" onclick="setBoardViewMode(\'' + tabDef.key + '\',\'list\')">☰ Lista</button>' +
+          '<button onclick="setBoardViewMode(\'' + tabDef.key + '\',\'board\')">▦ Quadro</button>' +
+        '</div>' +
+        newActivityBtnHtml +
+      '</div>' +
     '</div>' +
     '<div class="cards" id="cards-' + tabDef.key + '"></div>';
   wrap.appendChild(view);
@@ -1921,8 +2052,13 @@ function renderActivityBoardCards(key){
   if(!el) return;
   const items = logData[key] || [];
   const filter = activityBoardFilters[key] || 'Todas';
-  const filtered = filter === "Todas" ? items : items.filter(d=>d.area===filter);
-  el.innerHTML = filtered.map(item => buildActivityCardHtml(item, key)).join('');
+  let filtered = filter === "Todas" ? items : items.filter(d=>d.area===filter);
+  filtered = filterBySearch(filtered, key);
+  if((boardViewMode[key]||'list') === 'board'){
+    el.innerHTML = buildKanbanBoardHtml(filtered, key);
+  }else{
+    el.innerHTML = filtered.map(item => buildActivityCardHtml(item, key)).join('');
+  }
 }
 
 async function updateActivityBoardStatus(key, id, value){
@@ -2093,6 +2229,101 @@ async function loadAndMountCustomTabs(){
   }
 }
 
+/* ---- Quadro (Kanban) e busca — visões alternativas dos quadros de atividades ---- */
+
+let boardViewMode = {};
+let searchQuery = {};
+
+function setBoardViewMode(boardKey, mode){
+  boardViewMode[boardKey] = mode;
+  const toggle = document.getElementById('viewToggle-' + boardKey);
+  if(toggle){
+    const btns = toggle.querySelectorAll('button');
+    btns.forEach(b=>b.classList.remove('active'));
+    btns[mode === 'list' ? 0 : 1].classList.add('active');
+  }
+  if(boardKey === 'geral'){ renderCards(); } else { renderActivityBoardCards(boardKey); }
+}
+
+function setSearchQuery(boardKey, value){
+  searchQuery[boardKey] = (value || '').toLowerCase();
+  if(boardKey === 'geral'){ renderCards(); } else { renderActivityBoardCards(boardKey); }
+}
+
+function filterBySearch(items, boardKey){
+  const q = searchQuery[boardKey];
+  if(!q) return items;
+  return items.filter(i =>
+    (i.title||'').toLowerCase().includes(q) ||
+    (i.responsavel||'').toLowerCase().includes(q)
+  );
+}
+
+let kanbanDragData = null;
+
+function handleKanbanDragStart(ev, id, boardKey){
+  kanbanDragData = { id: id, boardKey: boardKey };
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.target.classList.add('dragging');
+}
+
+function handleKanbanDragEnd(ev){
+  ev.target.classList.remove('dragging');
+}
+
+function handleKanbanDrop(ev, boardKey, newStatus){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if(!kanbanDragData || kanbanDragData.boardKey !== boardKey) return;
+  if(boardKey === 'geral'){
+    updateStatus(kanbanDragData.id, newStatus);
+  }else{
+    updateActivityBoardStatus(boardKey, kanbanDragData.id, newStatus);
+  }
+  kanbanDragData = null;
+}
+
+function buildKanbanCardHtml(item, boardKey){
+  const safeTitle = String(item.title || '').replace(/</g,'&lt;');
+  const metaParts = [];
+  if(item.responsavel) metaParts.push(item.responsavel);
+  if(item.prazo) metaParts.push(formatDateShort(item.prazo));
+  return `
+    <div class="kanban-card" draggable="true"
+         ondragstart="handleKanbanDragStart(event, ${item.id}, '${boardKey}')"
+         ondragend="handleKanbanDragEnd(event)">
+      <div class="kanban-card-area">${item.area || ''}</div>
+      <div class="kanban-card-title">${safeTitle}</div>
+      <div class="kanban-card-meta">${metaParts.map(p=>`<span>${p}</span>`).join('')}</div>
+    </div>
+  `;
+}
+
+function buildKanbanBoardHtml(items, boardKey){
+  const columns = STAGES.map(stage => {
+    const stageItems = items.filter(i => i.status === stage);
+    const color = STAGE_COLOR[stage];
+    const cardsHtml = stageItems.length
+      ? stageItems.map(item => buildKanbanCardHtml(item, boardKey)).join('')
+      : '<p class="kanban-empty">Arraste um card aqui</p>';
+    return `
+      <div class="kanban-col">
+        <div class="kanban-col-header" style="border-top:3px solid ${color};padding-top:8px;">
+          <span>${stage}</span>
+          <span class="kanban-count">${stageItems.length}</span>
+        </div>
+        <div class="kanban-col-body"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleKanbanDrop(event,'${boardKey}','${stage}')">
+          ${cardsHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+  return `<div class="kanban-board">${columns}</div>`;
+}
+
 function buildActivityCardHtml(item, boardKey){
   const stageIdx = STAGES.indexOf(item.status);
   const color = STAGE_COLOR[item.status];
@@ -2160,8 +2391,13 @@ function buildActivityCardHtml(item, boardKey){
 
 function renderCards(){
   const el = document.getElementById('cards');
-  const items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
-  el.innerHTML = items.map(item => buildActivityCardHtml(item, 'geral')).join('');
+  let items = activeFilter==="Todas" ? data : data.filter(d=>d.area===activeFilter);
+  items = filterBySearch(items, 'geral');
+  if((boardViewMode['geral']||'list') === 'board'){
+    el.innerHTML = buildKanbanBoardHtml(items, 'geral');
+  }else{
+    el.innerHTML = items.map(item => buildActivityCardHtml(item, 'geral')).join('');
+  }
 }
 
 function updateStatus(id, value){
