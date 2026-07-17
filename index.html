@@ -280,11 +280,10 @@
   }
   .notif-panel{
     display:none;
-    position:absolute;
-    top:calc(100% + 8px);
-    right:0;
+    position:fixed;
     width:340px;
-    max-height:420px;
+    max-width:calc(100vw - 24px);
+    max-height:70vh;
     overflow-y:auto;
     background:var(--panel);
     border:1px solid var(--line);
@@ -2433,8 +2432,47 @@ function toggleNotifPanel(){
     return;
   }
   renderNotifPanel();
+  positionNotifPanel();
   panel.classList.add('active');
 }
+
+/**
+ * Calcula a posição do painel de notificações na tela, em vez de
+ * confiar em CSS relativo (que não funciona bem quando o botão do
+ * sino não está colado na borda direita — como em telas menores ou
+ * quando os botões do topo quebram linha). Refeito toda vez que o
+ * painel abre e quando a janela muda de tamanho enquanto ele está aberto.
+ */
+function positionNotifPanel(){
+  const panel = document.getElementById('notifPanel');
+  const btn = document.getElementById('notifBtn');
+  if(!panel || !btn) return;
+
+  const rect = btn.getBoundingClientRect();
+  const margin = 12;
+  const panelWidth = Math.min(340, window.innerWidth - margin*2);
+  panel.style.width = panelWidth + 'px';
+
+  let left = rect.left;
+  if(left + panelWidth > window.innerWidth - margin){
+    left = window.innerWidth - panelWidth - margin;
+  }
+  if(left < margin) left = margin;
+
+  let top = rect.bottom + 8;
+  const maxTop = window.innerHeight - 60;
+  if(top > maxTop) top = maxTop;
+
+  panel.style.left = left + 'px';
+  panel.style.top = top + 'px';
+}
+
+window.addEventListener('resize', function(){
+  const panel = document.getElementById('notifPanel');
+  if(panel && panel.classList.contains('active')){
+    positionNotifPanel();
+  }
+});
 
 function renderNotifPanel(){
   const panel = document.getElementById('notifPanel');
