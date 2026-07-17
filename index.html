@@ -3118,12 +3118,49 @@ function buildStatusBarChartSVG(items){
   return svg;
 }
 
+let chartCollapsed = loadChartCollapsedSync();
+
+function loadChartCollapsedSync(){
+  try{
+    const raw = localStorage.getItem('painel-graficos-minimizados');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){
+    return {};
+  }
+}
+
+function saveChartCollapsedSync(){
+  try{
+    localStorage.setItem('painel-graficos-minimizados', JSON.stringify(chartCollapsed));
+  }catch(e){
+    // ignora — a preferência ainda funciona durante a sessão, só não persiste
+  }
+}
+
+function toggleStatusChart(boardKey){
+  chartCollapsed[boardKey] = !chartCollapsed[boardKey];
+  saveChartCollapsedSync();
+  const body = document.getElementById('statusChartBody-' + boardKey);
+  const btn = document.getElementById('statusChartToggle-' + boardKey);
+  if(body) body.style.display = chartCollapsed[boardKey] ? 'none' : '';
+  if(btn) btn.textContent = chartCollapsed[boardKey] ? '▸ Expandir' : '▾ Minimizar';
+}
+
 function renderStatusChart(boardKey, items){
   const el = document.getElementById('statusChart-' + boardKey);
   if(!el) return;
+  const isCollapsed = !!chartCollapsed[boardKey];
   el.innerHTML =
-    '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Atividades por status</div>' +
-    buildStatusBarChartSVG(items);
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+      '<div style="font-size:13px;font-weight:700;">Atividades por status</div>' +
+      '<button id="statusChartToggle-' + boardKey + '" onclick="toggleStatusChart(\'' + boardKey + '\')" ' +
+        'style="border:none;background:transparent;color:var(--steel);font-size:11.5px;font-weight:700;cursor:pointer;">' +
+        (isCollapsed ? '▸ Expandir' : '▾ Minimizar') +
+      '</button>' +
+    '</div>' +
+    '<div id="statusChartBody-' + boardKey + '" style="display:' + (isCollapsed ? 'none' : '') + ';">' +
+      buildStatusBarChartSVG(items) +
+    '</div>';
 }
 
 function buildLineChartSVG(series, opts){
