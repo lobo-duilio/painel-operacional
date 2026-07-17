@@ -2480,7 +2480,7 @@ function computeNotifications(){
 
 function computeChecklistAlerts(){
   if(!checklistResponses || !checklistResponses.length) return [];
-  return checklistResponses.filter(rowHasNaoConforme);
+  return checklistResponses.filter(rowIsAlert);
 }
 
 function updateNotifBadge(){
@@ -2826,6 +2826,21 @@ function rowHasNaoConforme(row){
   return Object.keys(row).some(k => isNaoConforme(row[k]));
 }
 
+/** Verdadeiro quando o campo "Problemas encontrados" tem algo relevante relatado (não vazio, "nenhum", "n/a", etc). */
+function hasReportedProblem(val){
+  const norm = normalizeHeader(val);
+  if(!norm) return false;
+  const semProblema = ['nenhum','nenhuma','nenhum problema','sem problemas','sem problema','n/a','na','-','ok','tudo em ordem','tudo ok'];
+  return semProblema.indexOf(norm) === -1;
+}
+
+/** Uma resposta é "alerta" se algum item foi marcado Não conforme OU se há um problema relatado em texto livre. */
+function rowIsAlert(row){
+  if(rowHasNaoConforme(row)) return true;
+  const problemKey = Object.keys(row).find(k => normalizeHeader(k).indexOf('problema') !== -1);
+  return !!(problemKey && hasReportedProblem(row[problemKey]));
+}
+
 function renderChecklistResults(){
   const container = document.getElementById('checklist-results-container');
   if(!container) return;
@@ -2854,12 +2869,12 @@ function renderChecklistResults(){
   const emailKey = findHeader(/e-?mail/);
   const metaKeysUsed = [titleKey, kmKey, respKey, dataKey, timestampKey, emailKey].filter(Boolean);
   const itemKeys = headers.filter(h => metaKeysUsed.indexOf(h) === -1);
+  const problemKey = findHeader(/problema/);
 
-  const totalNaoConforme = checklistResponses.filter(rowHasNaoConforme).length;
+  const totalNaoConforme = checklistResponses.filter(rowIsAlert).length;
 
   const cardsHtml = checklistResponses.slice().reverse().map(row => {
-    const alertItems = itemKeys.filter(k => isNaoConforme(row[k]));
-    const isAlert = alertItems.length > 0;
+    const isAlert = rowIsAlert(row);
     const title = escapeHtml((titleKey && row[titleKey]) ? row[titleKey] : 'Checklist');
     const metaParts = [];
     if(dataKey && row[dataKey]) metaParts.push(escapeHtml(String(row[dataKey]).slice(0,10)));
@@ -2867,19 +2882,21 @@ function renderChecklistResults(){
     if(respKey && row[respKey]) metaParts.push(escapeHtml(row[respKey]));
 
     // Respostas curtas (ok/Não conforme/números) vão na grade compacta;
-    // textos livres longos (observações, problemas relatados) ganham
-    // bloco próprio embaixo, com quebra de linha normal — evita que um
+    // textos livres longos (observações) e o campo "Problemas
+    // encontrados" (sempre, mesmo curto — ex: "nenhum") ganham bloco
+    // próprio embaixo, com quebra de linha normal — evita que um
     // texto longo vaze por cima do item vizinho na grade.
     const compactHtml = [];
     const longHtml = [];
     itemKeys.forEach(k => {
       const raw = row[k] !== undefined && row[k] !== null ? String(row[k]) : '';
-      const bad = isNaoConforme(raw);
-      if(raw.length > 24){
+      const isProblemField = (k === problemKey);
+      const bad = isNaoConforme(raw) || (isProblemField && hasReportedProblem(raw));
+      if(isProblemField || raw.length > 24){
         longHtml.push(`
           <div class="checklist-item-long ${bad?'bad':''}">
             <div class="ci-label">${escapeHtml(k)}</div>
-            <div class="ci-text">${escapeHtml(raw)}</div>
+            <div class="ci-text">${escapeHtml(raw) || '—'}</div>
           </div>
         `);
       }else{
