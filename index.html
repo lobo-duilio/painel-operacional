@@ -267,6 +267,56 @@
     padding:16px 0;
     margin:0;
   }
+
+  .notif-badge{
+    display:inline-block;
+    background:var(--red);
+    color:#fff;
+    font-size:10.5px;
+    font-weight:700;
+    border-radius:10px;
+    padding:1px 7px;
+    margin-left:4px;
+  }
+  .notif-panel{
+    display:none;
+    position:absolute;
+    top:calc(100% + 8px);
+    right:0;
+    width:340px;
+    max-height:420px;
+    overflow-y:auto;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.18);
+    z-index:1200;
+    padding:8px;
+  }
+  .notif-panel.active{display:block;}
+  .notif-panel h4{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin:8px 10px 6px;
+  }
+  .notif-item{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:transparent;
+    border:none;
+    border-bottom:1px solid var(--line);
+    padding:9px 10px;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .notif-item:hover{background:#FAF9F5;}
+  .notif-item .ni-title{font-size:12.5px;font-weight:600;color:var(--ink);}
+  .notif-item .ni-meta{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .notif-item .ni-meta.overdue{color:var(--red);font-weight:700;}
+  .notif-empty{font-size:12px;color:var(--ink-soft);padding:16px 10px;text-align:center;}
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -865,6 +915,10 @@
       <p class="meta" id="syncStatus">Verificando conexão com o Google Sheets…</p>
     </div>
     <div class="actions">
+      <div style="position:relative;">
+        <button class="btn" id="notifBtn" onclick="toggleNotifPanel()">🔔 Prazos <span id="notifCount" class="notif-badge" style="display:none;">0</span></button>
+        <div id="notifPanel" class="notif-panel"></div>
+      </div>
       <span class="meta" id="userInfo" style="margin-right:6px;"></span>
       <button class="btn" onclick="doLogout()">Sair</button>
       <button class="btn" id="usersBtn" onclick="openUserPanel()">Gerenciar usuários</button>
@@ -889,6 +943,7 @@
   <!-- VIEW: PAINEL GERAL (Atividades) -->
   <div class="view active" id="view-geral">
     <div class="stats" id="stats"></div>
+    <div class="logtable-wrap" id="statusChart-geral" style="margin-bottom:16px;"></div>
     <div class="filters-row">
       <div class="filters" id="filters"></div>
       <div class="filters-right">
@@ -1729,6 +1784,7 @@ function renderStats(){
         <div class="lbl">${s}</div>
       </div>`).join('')}
   `;
+  renderStatusChart('geral', data);
 }
 
 function renderFilters(){
@@ -1992,6 +2048,7 @@ function mountActivityBoard(tabDef){
     '<p>Aba personalizada</p></div>' +
     '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
     '<div class="stats" id="stats-' + tabDef.key + '"></div>' +
+    '<div class="logtable-wrap" id="statusChart-' + tabDef.key + '" style="margin-bottom:16px;"></div>' +
     '<div class="filters-row">' +
       '<div class="filters" id="filters-' + tabDef.key + '"></div>' +
       '<div class="filters-right">' +
@@ -2011,6 +2068,7 @@ function renderActivityBoard(key){
   renderActivityBoardStats(key);
   renderActivityBoardFilters(key);
   renderActivityBoardCards(key);
+  updateNotifBadge();
 }
 
 function renderActivityBoardStats(key){
@@ -2028,6 +2086,7 @@ function renderActivityBoardStats(key){
         <div class="lbl">${s}</div>
       </div>`).join('')}
   `;
+  renderStatusChart(key, items);
 }
 
 function renderActivityBoardFilters(key){
@@ -2324,6 +2383,103 @@ function buildKanbanBoardHtml(items, boardKey){
   return `<div class="kanban-board">${columns}</div>`;
 }
 
+/* ---- Notificações de prazo (sino no topo) ---- */
+
+/** Reúne os itens de todos os quadros de atividades visíveis para o usuário atual. */
+function getAllActivityItems(){
+  const result = [];
+  data.forEach(item => result.push({ item: item, boardKey: 'geral', boardLabel: 'Operacional' }));
+  customTabsRegistry.forEach(tabDef => {
+    if(tabDef.type === 'activity'){
+      (logData[tabDef.key] || []).forEach(item => result.push({ item: item, boardKey: tabDef.key, boardLabel: tabDef.label }));
+    }
+  });
+  return result;
+}
+
+/** Atividades com prazo vencido ou vencendo nos próximos 3 dias, ainda não concluídas. */
+function computeNotifications(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const threshold = new Date(today); threshold.setDate(threshold.getDate() + 3);
+
+  const relevant = getAllActivityItems().filter(entry => {
+    const it = entry.item;
+    if(!it.prazo || it.status === 'Concluído') return false;
+    const d = new Date(it.prazo + 'T00:00:00');
+    if(isNaN(d.getTime())) return false;
+    return d <= threshold;
+  });
+
+  relevant.sort((a,b) => new Date(a.item.prazo) - new Date(b.item.prazo));
+  return relevant;
+}
+
+function updateNotifBadge(){
+  const badge = document.getElementById('notifCount');
+  if(!badge) return;
+  const list = computeNotifications();
+  if(list.length > 0){
+    badge.textContent = list.length;
+    badge.style.display = '';
+  }else{
+    badge.style.display = 'none';
+  }
+}
+
+function toggleNotifPanel(){
+  const panel = document.getElementById('notifPanel');
+  if(panel.classList.contains('active')){
+    panel.classList.remove('active');
+    return;
+  }
+  renderNotifPanel();
+  panel.classList.add('active');
+}
+
+function renderNotifPanel(){
+  const panel = document.getElementById('notifPanel');
+  const list = computeNotifications();
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  if(list.length === 0){
+    panel.innerHTML = '<p class="notif-empty">Nenhum prazo atrasado ou próximo. 🎉</p>';
+    return;
+  }
+
+  panel.innerHTML = '<h4>Atrasadas ou vencendo em até 3 dias</h4>' + list.map(entry => {
+    const it = entry.item;
+    const d = new Date(it.prazo + 'T00:00:00');
+    const overdue = d < today;
+    const diffDays = Math.round((d - today) / 86400000);
+    const label = overdue
+      ? 'Atrasada há ' + Math.abs(diffDays) + (Math.abs(diffDays) === 1 ? ' dia' : ' dias')
+      : (diffDays === 0 ? 'Vence hoje' : 'Vence em ' + diffDays + (diffDays === 1 ? ' dia' : ' dias'));
+    const safeTitle = String(it.title || '(sem título)').replace(/</g,'&lt;');
+    return `
+      <button class="notif-item" onclick="goToNotification('${entry.boardKey}')">
+        <div class="ni-title">${safeTitle}</div>
+        <div class="ni-meta ${overdue ? 'overdue' : ''}">${entry.boardLabel} · ${label}</div>
+      </button>
+    `;
+  }).join('');
+}
+
+function goToNotification(boardKey){
+  document.getElementById('notifPanel').classList.remove('active');
+  if(document.getElementById('view-' + boardKey)){
+    showView(boardKey);
+  }
+}
+
+document.addEventListener('click', function(ev){
+  const panel = document.getElementById('notifPanel');
+  const btn = document.getElementById('notifBtn');
+  if(!panel || !btn) return;
+  if(panel.classList.contains('active') && !panel.contains(ev.target) && !btn.contains(ev.target)){
+    panel.classList.remove('active');
+  }
+});
+
 function buildActivityCardHtml(item, boardKey){
   const stageIdx = STAGES.indexOf(item.status);
   const color = STAGE_COLOR[item.status];
@@ -2420,6 +2576,7 @@ function renderGeral(){
   renderStats();
   renderFilters();
   renderCards();
+  updateNotifBadge();
 }
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
@@ -2672,6 +2829,37 @@ function formatDateShort(iso){
   return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
 }
 
+/** Gráfico de barras simples com a quantidade de atividades por status. */
+function buildStatusBarChartSVG(items){
+  const counts = STAGES.map(s => items.filter(i=>i.status===s).length);
+  const maxCount = Math.max(1, ...counts);
+  const width = 640, height = 170;
+  const padL = 14, padR = 14, padT = 24, padB = 34;
+  const gap = (width - padL - padR) / STAGES.length;
+  const barWidth = gap * 0.55;
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block;">`;
+  STAGES.forEach((s,i)=>{
+    const barH = (counts[i]/maxCount) * (height-padT-padB);
+    const x = padL + i*gap + (gap-barWidth)/2;
+    const y = height - padB - barH;
+    const color = STAGE_COLOR[s];
+    svg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(barH,2).toFixed(1)}" fill="${color}" rx="4"/>`;
+    svg += `<text x="${(x+barWidth/2).toFixed(1)}" y="${(y-8).toFixed(1)}" font-size="12" text-anchor="middle" fill="#1B2430" font-weight="700">${counts[i]}</text>`;
+    svg += `<text x="${(x+barWidth/2).toFixed(1)}" y="${height-12}" font-size="9" text-anchor="middle" fill="#8A8F98">${s}</text>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderStatusChart(boardKey, items){
+  const el = document.getElementById('statusChart-' + boardKey);
+  if(!el) return;
+  el.innerHTML =
+    '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Atividades por status</div>' +
+    buildStatusBarChartSVG(items);
+}
+
 function buildLineChartSVG(series, opts){
   opts = opts || {};
   const width = opts.width || 640;
@@ -2842,6 +3030,7 @@ async function bulkLoadInitialData(){
     data = [];
     Object.keys(LOG_CONFIGS).forEach(k => logData[k] = []);
     customTabsRegistry = [];
+    renderGeral();
     renderAllLogs();
     return;
   }
@@ -2855,6 +3044,7 @@ async function bulkLoadInitialData(){
     data = JSON.parse(JSON.stringify(SEED));
     await save();
   }
+  renderGeral();
 
   Object.keys(LOG_CONFIGS).forEach(k => {
     const entry = batch1['log-' + k];
