@@ -90,10 +90,12 @@
   /* Main section nav */
   .mainnav{
     display:flex;
+    flex-wrap:wrap;
+    row-gap:4px;
     gap:8px;
     margin-bottom:20px;
     border-bottom:2px solid var(--line);
-    padding-bottom:0;
+    padding-bottom:8px;
   }
   .mainnav button{
     border:none;
@@ -736,8 +738,7 @@
     .topbar .actions{width:100%;flex-wrap:wrap;}
     .topbar .actions .btn{flex:1 1 auto;font-size:12px;padding:9px 10px;}
     .stats{grid-template-columns:repeat(2,1fr);}
-    .mainnav{overflow-x:auto;flex-wrap:nowrap;}
-    .mainnav button{white-space:nowrap;}
+    .mainnav button{white-space:nowrap;font-size:12.5px;padding:10px 14px;}
     .card{padding:16px 16px;}
     .modal-form-grid{grid-template-columns:1fr;}
     .modal-card{padding:22px 18px;}
