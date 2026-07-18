@@ -453,11 +453,11 @@
     padding:6px 6px 3px;
   }
   .embasamento-item{
-    display:block;
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
     width:100%;
     text-align:left;
-    background:transparent;
-    border:none;
     border-bottom:1px solid var(--line);
     padding:7px 8px;
     font-size:12px;
@@ -466,7 +466,33 @@
     cursor:pointer;
     white-space:pre-line;
   }
+  .embasamento-item input{margin-top:2px;flex-shrink:0;}
   .embasamento-item:hover{background:var(--steel-light);}
+  .embasamento-actions{
+    display:flex;
+    gap:8px;
+    padding:8px 4px 2px;
+    position:sticky;
+    bottom:0;
+    background:#FCFCFA;
+  }
+  .embasamento-actions button{
+    flex:1;
+    border:1px solid var(--line);
+    background:var(--panel);
+    border-radius:6px;
+    padding:8px 10px;
+    font-size:11.5px;
+    font-weight:700;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .embasamento-actions .ai-btn{
+    background:linear-gradient(135deg, #6D5BD0, #2E6DA4);
+    color:#fff;
+    border:none;
+  }
+  .embasamento-actions button:disabled{opacity:0.6;cursor:default;}
 
   @media print{
     body *{visibility:hidden;}
@@ -2642,25 +2668,78 @@ function toggleEmbasamentoPicker(tabKey){
       if(!porCategoria[cat]) porCategoria[cat] = [];
       porCategoria[cat].push(item);
     });
-    el.innerHTML = Object.keys(porCategoria).map(cat => {
-      const itensHtml = porCategoria[cat].map(item => {
-        const textoEscapado = String(item.texto||'').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+    const itensHtml = Object.keys(porCategoria).map(cat => {
+      const linhas = porCategoria[cat].map(item => {
         const textoVisivel = String(item.texto||'').replace(/</g,'&lt;');
-        return `<button type="button" class="embasamento-item" onclick="insertEmbasamento('${tabKey}','${textoEscapado}')">${textoVisivel}</button>`;
+        return `
+          <label class="embasamento-item">
+            <input type="checkbox" class="embasamento-check">
+            <span>${textoVisivel}</span>
+          </label>
+        `;
       }).join('');
-      return `<div class="embasamento-categoria">${cat}</div>${itensHtml}`;
+      return `<div class="embasamento-categoria">${cat}</div>${linhas}`;
     }).join('');
+
+    el.innerHTML = itensHtml + `
+      <div class="embasamento-actions">
+        <button type="button" onclick="inserirEmbasamentosSelecionados('${tabKey}')">Inserir selecionados</button>
+        <button type="button" id="embasamentoAiBtn-${tabKey}" class="ai-btn" onclick="conectarEmbasamentosComIA('${tabKey}')">✨ Conectar com IA</button>
+      </div>
+    `;
   }
   el.style.display = '';
 }
 
-/** Insere (acrescenta) o texto do embasamento clicado no campo de Observação técnica do registro. */
-function insertEmbasamento(tabKey, texto){
+/** Lê os embasamentos marcados no seletor aberto (usa o texto visível do <span>, já sem escapes). */
+function getEmbasamentosMarcados(tabKey){
+  const checks = document.querySelectorAll('#embasamentoPicker-' + tabKey + ' .embasamento-check:checked');
+  return Array.from(checks).map(cb => cb.nextElementSibling.textContent);
+}
+
+/** Insere os embasamentos marcados direto, um atrás do outro, sem passar pela IA. */
+function inserirEmbasamentosSelecionados(tabKey){
+  const textos = getEmbasamentosMarcados(tabKey);
+  if(textos.length === 0){
+    alert('Marque ao menos um embasamento.');
+    return;
+  }
   const textarea = document.getElementById('diarioNovaObs-' + tabKey);
-  if(!textarea) return;
-  textarea.value = textarea.value ? (textarea.value + '\n' + texto) : texto;
+  const juntos = textos.join('\n');
+  textarea.value = textarea.value ? (textarea.value + '\n' + juntos) : juntos;
   document.getElementById('embasamentoPicker-' + tabKey).style.display = 'none';
   textarea.focus();
+}
+
+/** Envia os embasamentos marcados pra IA (Gemini) juntar num parágrafo coerente, e insere o resultado. */
+async function conectarEmbasamentosComIA(tabKey){
+  const textos = getEmbasamentosMarcados(tabKey);
+  if(textos.length === 0){
+    alert('Marque ao menos um embasamento antes de conectar com a IA.');
+    return;
+  }
+  if(textos.length === 1){
+    if(!confirm('Você marcou só um embasamento — a IA vai só reescrever ele, sem conectar nada. Quer continuar mesmo assim?')) return;
+  }
+
+  const btn = document.getElementById('embasamentoAiBtn-' + tabKey);
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '✨ Conectando…';
+
+  try{
+    const json = await userApiCall('conectarEmbasamentos', { tabKey: tabKey, textos: textos });
+    const textarea = document.getElementById('diarioNovaObs-' + tabKey);
+    textarea.value = textarea.value ? (textarea.value + '\n' + json.texto) : json.texto;
+    document.getElementById('embasamentoPicker-' + tabKey).style.display = 'none';
+    textarea.focus();
+  }catch(e){
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    alert('Não foi possível conectar com a IA: ' + (e.message || e) + '\n\nDica: confira se a chave gratuita do Gemini foi configurada no Apps Script (função "configurarChaveGemini").');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
 }
 
 async function addDiarioRegistro(tabKey){
