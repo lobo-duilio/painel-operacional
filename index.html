@@ -417,6 +417,29 @@
     font-weight:700;
     color:var(--ink);
   }
+
+  .diario-fotos-grid{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:10px;
+  }
+  .diario-thumb{
+    width:90px;
+    height:90px;
+    object-fit:cover;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--gray-light);
+  }
+
+  @media print{
+    body *{visibility:hidden;}
+    .report-print-area, .report-print-area *{visibility:visible;}
+    .report-print-area{position:absolute;top:0;left:0;width:100%;padding:10px;}
+    .report-print-area button{display:none;}
+    .diario-thumb{width:110px;height:110px;}
+  }
   #newActivityBtn{
     background:var(--navy);
     color:#fff;
@@ -995,6 +1018,7 @@
         <select id="newTabTipo" onchange="toggleNewTabUrlField()">
           <option value="activity">Quadro de atividades (como o Operacional)</option>
           <option value="stock">Controle de estoque (itens, entrada, saída — como Roedores)</option>
+          <option value="diario">Registro diário com fotos (por empreendimento)</option>
           <option value="embed">Formulário ou link incorporado</option>
         </select>
       </div>
@@ -1366,8 +1390,9 @@ function updateUserInfo(){
 function clientKeyToTabId(key){
   if(key.indexOf('roedores-') === 0) return 'roedores';
   if(key.indexOf('aves-') === 0) return 'aves';
-  const stockMatch = key.match(/^(.+)-(itens|entrada|saida)$/);
-  if(stockMatch && stockTabBaseKeys.indexOf(stockMatch[1]) !== -1) return stockMatch[1];
+  const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos)$/);
+  if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
+  if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   return key; // abas personalizadas: a própria chave já é o tabId
 }
 
@@ -2148,6 +2173,8 @@ async function submitNewTab(){
     tabDef = { key: key, label: nome, type: 'embed', url: url };
   }else if(tipo === 'stock'){
     tabDef = { key: key, label: nome, type: 'stock' };
+  }else if(tipo === 'diario'){
+    tabDef = { key: key, label: nome, type: 'diario' };
   }else{
     tabDef = { key: key, label: nome, type: 'activity' };
   }
@@ -2173,6 +2200,13 @@ async function submitNewTab(){
     renderLogTable(key + '-entrada');
     renderLogTable(key + '-saida');
     renderStockEstoque(key);
+  }else if(tipo === 'diario'){
+    mountDiarioTab(tabDef);
+    diarioTabBaseKeys.push(key);
+    logData[key + '-registros'] = [];
+    logData[key + '-empreendimentos'] = [];
+    renderLogTable(key + '-empreendimentos');
+    renderDiarioRegistros(key);
   }else{
     mountActivityBoard(tabDef);
     logData[key] = [];
@@ -2377,6 +2411,329 @@ function maybeRenderStockEstoque(key){
   }
 }
 
+/** Quando o catálogo de Empreendimentos muda, atualiza os menus que dependem dele (formulário de novo registro e filtro do relatório). */
+function maybeRefreshDiarioDropdowns(key){
+  const match = key.match(/^(.+)-empreendimentos$/);
+  if(match && diarioTabBaseKeys.indexOf(match[1]) !== -1){
+    renderDiarioRegistros(match[1]);
+    popularFiltroEmpreendimentoRelatorio(match[1]);
+  }
+}
+
+/* =====================================================================
+   REGISTRO DIÁRIO COM FOTOS — por empreendimento
+   =====================================================================
+ * Cada aba desse tipo tem: um catálogo de "Empreendimentos" (reaproveita
+ * a tabela genérica, igual à de Itens do estoque), uma tabela de
+ * "Registros" (data, empreendimento, descrição, observação técnica e
+ * fotos — upload direto pro Google Drive, organizado por empreendimento
+ * / ano / mês / dia), e um gerador de "Relatório" por intervalo de
+ * datas, com estatísticas, gráfico simples, fotos e texto técnico,
+ * pronto para imprimir/salvar como PDF pelo navegador.
+ */
+
+let diarioTabBaseKeys = [];
+
+function mountDiarioTab(tabDef){
+  if(document.getElementById('view-' + tabDef.key)) return;
+
+  LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
+    container: 'sub-' + tabDef.key + '-empreendimentos',
+    cols: [
+      {key:'nome', label:'Nome do empreendimento', type:'text'}
+    ]
+  };
+
+  const nav = document.getElementById('mainnav');
+  const addBtn = document.getElementById('nav-add-tab');
+  const btn = document.createElement('button');
+  btn.id = 'nav-' + tabDef.key;
+  btn.textContent = tabDef.label;
+  btn.onclick = function(){ showView(tabDef.key); };
+  nav.insertBefore(btn, addBtn);
+
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const deleteTabBtn = (!APPS_SCRIPT_URL || isAdmin)
+    ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
+    : '';
+
+  const wrap = document.querySelector('.wrap');
+  const view = document.createElement('div');
+  view.className = 'view';
+  view.id = 'view-' + tabDef.key;
+  view.innerHTML =
+    '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
+    '<p>Registro diário com fotos, por empreendimento</p></div>' +
+    '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
+    '<div class="subnav">' +
+      '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\')">Relatório</button>' +
+    '</div>' +
+    '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-relatorio">' +
+      buildRelatorioFormHtml(tabDef.key) +
+      '<div id="relatorioResultado-' + tabDef.key + '"></div>' +
+    '</div>';
+  wrap.appendChild(view);
+}
+
+/** Reduz o tamanho da imagem no navegador antes de enviar (mais rápido, menos espaço no Drive). */
+function compressImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e){
+      const img = new Image();
+      img.onload = function(){
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality || 0.75).split(',')[1]);
+      };
+      img.onerror = function(){ reject(new Error('Não foi possível ler a imagem.')); };
+      img.src = e.target.result;
+    };
+    reader.onerror = function(){ reject(new Error('Não foi possível ler o arquivo.')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function driveThumbUrl(fileId){ return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w500'; }
+function driveViewUrl(fileId){ return 'https://drive.google.com/file/d/' + fileId + '/view'; }
+
+async function uploadFotoParaDrive(tabKey, empreendimento, dataStr, file){
+  const base64 = await compressImageFile(file, 1400, 0.75);
+  return await userApiCall('uploadFoto', {
+    tabKey: tabKey,
+    empreendimento: empreendimento,
+    data: dataStr,
+    fileName: file.name,
+    mimeType: 'image/jpeg',
+    base64: base64
+  });
+}
+
+function renderDiarioRegistros(tabKey){
+  const container = document.getElementById('sub-' + tabKey + '-registros');
+  if(!container) return;
+
+  const registros = logData[tabKey + '-registros'] || [];
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
+  const canManage = canManageTab(tabKey);
+
+  const optionsHtml = '<option value="">Selecione…</option>' + empreendimentos.map(n => `<option value="${n}">${n}</option>`).join('');
+
+  const rowsHtml = registros.slice().reverse().map(r => {
+    const fotoIds = (r.fotos || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const fotosHtml = fotoIds.map(id => `<a href="${driveViewUrl(id)}" target="_blank" rel="noopener"><img src="${driveThumbUrl(id)}" class="diario-thumb"></a>`).join('');
+    const delBtn = canManage
+      ? `<button class="rowdel" onclick="deleteDiarioRegistro('${tabKey}',${r.id})">Remover</button>`
+      : '';
+    return `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag">${r.empreendimento || '—'}</span>
+              <span class="card-title">${formatDateShort(r.data) || r.data || ''}</span>
+            </div>
+          </div>
+          ${delBtn}
+        </div>
+        <div class="card-sub" style="margin-top:6px;">${(r.descricao||'').replace(/</g,'&lt;')}</div>
+        ${r.observacaoTecnica ? `<div class="checklist-item-long" style="margin-top:8px;"><div class="ci-label">Observação técnica</div><div class="ci-text">${String(r.observacaoTecnica).replace(/</g,'&lt;')}</div></div>` : ''}
+        ${fotosHtml ? `<div class="diario-fotos-grid">${fotosHtml}</div>` : '<p style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;">Sem fotos.</p>'}
+      </div>
+    `;
+  }).join('') || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum registro ainda.</p>';
+
+  const addFormHtml = canManage ? `
+    <div class="logtable-wrap" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Novo registro</div>
+      <div class="modal-form-grid">
+        <div><label>Data</label><input type="date" id="diarioNovaData-${tabKey}"></div>
+        <div><label>Empreendimento</label><select id="diarioNovoEmp-${tabKey}">${optionsHtml}</select></div>
+        <div class="full"><label>Descrição / atividades realizadas</label><input type="text" id="diarioNovaDescricao-${tabKey}" placeholder="O que foi feito hoje…"></div>
+        <div class="full"><label>Observação técnica</label><input type="text" id="diarioNovaObs-${tabKey}" placeholder="Embasamento técnico, observações, pendências…"></div>
+        <div class="full"><label>Fotos (pode escolher várias)</label><input type="file" id="diarioNovasFotos-${tabKey}" accept="image/*" multiple></div>
+      </div>
+      <p class="modal-error" id="diarioErro-${tabKey}"></p>
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" id="diarioSalvarBtn-${tabKey}" onclick="addDiarioRegistro('${tabKey}')">Salvar registro</button>
+    </div>
+  ` : '';
+
+  container.innerHTML = addFormHtml + '<div class="cards">' + rowsHtml + '</div>';
+}
+
+async function addDiarioRegistro(tabKey){
+  const errEl = document.getElementById('diarioErro-' + tabKey);
+  errEl.textContent = '';
+
+  if(!canManageTab(tabKey)){
+    errEl.textContent = 'Você não tem permissão para adicionar registros nesta aba.';
+    return;
+  }
+
+  const data = document.getElementById('diarioNovaData-' + tabKey).value;
+  const empreendimento = document.getElementById('diarioNovoEmp-' + tabKey).value;
+  const descricao = document.getElementById('diarioNovaDescricao-' + tabKey).value.trim();
+  const observacaoTecnica = document.getElementById('diarioNovaObs-' + tabKey).value.trim();
+  const filesInput = document.getElementById('diarioNovasFotos-' + tabKey);
+  const files = filesInput.files ? Array.from(filesInput.files) : [];
+
+  if(!data || !empreendimento){
+    errEl.textContent = 'Preencha ao menos a data e o empreendimento.';
+    return;
+  }
+
+  const btn = document.getElementById('diarioSalvarBtn-' + tabKey);
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+
+  const fotoIds = [];
+  try{
+    for(let i=0; i<files.length; i++){
+      btn.textContent = 'Enviando foto ' + (i+1) + ' de ' + files.length + '…';
+      const resp = await uploadFotoParaDrive(tabKey, empreendimento, data, files[i]);
+      if(resp && resp.fileId) fotoIds.push(resp.fileId);
+    }
+  }catch(e){
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+    errEl.textContent = 'Erro ao enviar foto: ' + (e.message || e);
+    return;
+  }
+
+  const newRow = {
+    id: Date.now(),
+    data: data,
+    empreendimento: empreendimento,
+    descricao: descricao,
+    observacaoTecnica: observacaoTecnica,
+    fotos: fotoIds.join(',')
+  };
+
+  if(!logData[tabKey + '-registros']) logData[tabKey + '-registros'] = [];
+  logData[tabKey + '-registros'].push(newRow);
+  await saveLog(tabKey + '-registros');
+
+  btn.disabled = false;
+  btn.textContent = textoOriginal;
+  renderDiarioRegistros(tabKey);
+}
+
+async function deleteDiarioRegistro(tabKey, id){
+  if(!canManageTab(tabKey)){
+    alert('Você não tem permissão para excluir registros nesta aba.');
+    return;
+  }
+  if(!confirm('Remover este registro? As fotos continuam salvas no Google Drive, só o registro some do dashboard.')) return;
+  logData[tabKey + '-registros'] = (logData[tabKey + '-registros'] || []).filter(r => r.id !== id);
+  await saveLog(tabKey + '-registros');
+  renderDiarioRegistros(tabKey);
+}
+
+function buildRelatorioFormHtml(tabKey){
+  return `
+    <div class="logtable-wrap" style="margin-bottom:16px;">
+      <div class="modal-form-grid" style="margin-bottom:12px;">
+        <div><label>De</label><input type="date" id="relatorioDe-${tabKey}"></div>
+        <div><label>Até</label><input type="date" id="relatorioAte-${tabKey}"></div>
+        <div class="full"><label>Empreendimento</label><select id="relatorioEmp-${tabKey}"><option value="">Todos</option></select></div>
+      </div>
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="gerarRelatorioDiario('${tabKey}')">📊 Gerar relatório</button>
+    </div>
+  `;
+}
+
+function popularFiltroEmpreendimentoRelatorio(tabKey){
+  const sel = document.getElementById('relatorioEmp-' + tabKey);
+  if(!sel) return;
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
+  sel.innerHTML = '<option value="">Todos</option>' + empreendimentos.map(n => `<option value="${n}">${n}</option>`).join('');
+}
+
+function gerarRelatorioDiario(tabKey){
+  const de = document.getElementById('relatorioDe-' + tabKey).value;
+  const ate = document.getElementById('relatorioAte-' + tabKey).value;
+  const emp = document.getElementById('relatorioEmp-' + tabKey).value;
+  const resultEl = document.getElementById('relatorioResultado-' + tabKey);
+
+  const registros = (logData[tabKey + '-registros'] || []).filter(r => {
+    if(!r.data) return false;
+    if(de && r.data < de) return false;
+    if(ate && r.data > ate) return false;
+    if(emp && r.empreendimento !== emp) return false;
+    return true;
+  }).sort((a,b) => new Date(a.data) - new Date(b.data));
+
+  if(registros.length === 0){
+    resultEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum registro encontrado nesse período/empreendimento.</p>';
+    return;
+  }
+
+  const totalFotos = registros.reduce((acc,r) => acc + (r.fotos ? r.fotos.split(',').filter(Boolean).length : 0), 0);
+  const porEmpreendimento = {};
+  registros.forEach(r => { porEmpreendimento[r.empreendimento||'—'] = (porEmpreendimento[r.empreendimento||'—']||0) + 1; });
+  const empLabels = Object.keys(porEmpreendimento);
+  const empCounts = empLabels.map(l => porEmpreendimento[l]);
+  const maxCount = Math.max(1, ...empCounts);
+  const barsHtml = empLabels.map((l,i) => {
+    const pct = Math.round((empCounts[i]/maxCount)*100);
+    return `<div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;"><span>${l}</span><span style="font-weight:700;">${empCounts[i]}</span></div>
+      <div class="indic-progress-track"><div class="indic-progress-fill" style="width:${pct}%;background:var(--steel);"></div></div>
+    </div>`;
+  }).join('');
+
+  const registrosHtml = registros.map(r => {
+    const fotoIds = (r.fotos || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const fotosHtml = fotoIds.map(id => `<img src="${driveThumbUrl(id)}" class="diario-thumb">`).join('');
+    return `
+      <div class="card" style="break-inside:avoid;">
+        <div class="card-title-row">
+          <span class="area-tag">${r.empreendimento || '—'}</span>
+          <span class="card-title">${formatDateShort(r.data) || r.data}</span>
+        </div>
+        <div class="card-sub" style="margin-top:6px;">${(r.descricao||'').replace(/</g,'&lt;')}</div>
+        ${r.observacaoTecnica ? `<p style="font-size:12.5px;margin-top:6px;">${String(r.observacaoTecnica).replace(/</g,'&lt;')}</p>` : ''}
+        ${fotosHtml ? `<div class="diario-fotos-grid">${fotosHtml}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  resultEl.innerHTML = `
+    <div class="report-print-area">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div>
+          <h2 style="margin:0;">Relatório — ${emp || 'Todos os empreendimentos'}</h2>
+          <p style="color:var(--ink-soft);font-size:12.5px;margin:4px 0 0;">Período: ${de || '(início)'} a ${ate || '(fim)'}</p>
+        </div>
+        <button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+      </div>
+      <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        <div class="stat total"><div class="num">${registros.length}</div><div class="lbl">Registros no período</div></div>
+        <div class="stat s-exec"><div class="num">${totalFotos}</div><div class="lbl">Fotos anexadas</div></div>
+        <div class="stat s-plan"><div class="num">${empLabels.length}</div><div class="lbl">Empreendimento(s)</div></div>
+      </div>
+      <div class="logtable-wrap" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Registros por empreendimento</div>
+        ${barsHtml}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${registrosHtml}
+      </div>
+    </div>
+  `;
+}
+
 function mountActivityBoard(tabDef){
   if(document.getElementById('view-' + tabDef.key)) return;
 
@@ -2556,11 +2913,12 @@ async function deleteCustomTab(tabKey, label){
   delete LOG_CONFIGS[tabKey];
   delete logData[tabKey];
   delete activityBoardFilters[tabKey];
-  ['itens','entrada','saida'].forEach(suf => {
+  ['itens','entrada','saida','registros','empreendimentos'].forEach(suf => {
     delete LOG_CONFIGS[tabKey + '-' + suf];
     delete logData[tabKey + '-' + suf];
   });
   stockTabBaseKeys = stockTabBaseKeys.filter(k => k !== tabKey);
+  diarioTabBaseKeys = diarioTabBaseKeys.filter(k => k !== tabKey);
 
   const navBtn = document.getElementById('nav-' + tabKey);
   if(navBtn) navBtn.remove();
@@ -2655,6 +3013,14 @@ async function loadAndMountCustomTabs(){
       renderLogTable(tabDef.key + '-entrada');
       renderLogTable(tabDef.key + '-saida');
       renderStockEstoque(tabDef.key);
+    }else if(tabDef.type === 'diario'){
+      mountDiarioTab(tabDef);
+      diarioTabBaseKeys.push(tabDef.key);
+      await loadLogData(tabDef.key + '-registros');
+      await loadLogData(tabDef.key + '-empreendimentos');
+      renderLogTable(tabDef.key + '-empreendimentos');
+      renderDiarioRegistros(tabDef.key);
+      popularFiltroEmpreendimentoRelatorio(tabDef.key);
     }else{
       mountCustomTab(tabDef);
       await loadLogData(tabDef.key);
@@ -3410,6 +3776,7 @@ function addLogRow(key){
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') renderAvesWeightChart();
   maybeRenderStockEstoque(key);
+  maybeRefreshDiarioDropdowns(key);
 }
 
 function updateLogRow(key, id, field, value){
@@ -3419,6 +3786,7 @@ function updateLogRow(key, id, field, value){
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') renderAvesWeightChart();
   maybeRenderStockEstoque(key);
+  maybeRefreshDiarioDropdowns(key);
 }
 
 function deleteLogRow(key, id){
@@ -3432,6 +3800,7 @@ function deleteLogRow(key, id){
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') renderAvesWeightChart();
   maybeRenderStockEstoque(key);
+  maybeRefreshDiarioDropdowns(key);
 }
 
 /* ---- Gráficos simples (SVG, sem dependências externas) ---- */
@@ -3761,6 +4130,8 @@ async function bulkLoadInitialData(){
     customTabsRegistry.forEach(t => {
       if(t.type === 'stock'){
         customKeys.push('log-' + t.key + '-itens', 'log-' + t.key + '-entrada', 'log-' + t.key + '-saida');
+      }else if(t.type === 'diario'){
+        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos');
       }else{
         customKeys.push('log-' + t.key);
       }
@@ -3793,6 +4164,14 @@ async function bulkLoadInitialData(){
         renderLogTable(tabDef.key + '-entrada');
         renderLogTable(tabDef.key + '-saida');
         renderStockEstoque(tabDef.key);
+      }else if(tabDef.type === 'diario'){
+        mountDiarioTab(tabDef);
+        diarioTabBaseKeys.push(tabDef.key);
+        logData[tabDef.key + '-registros'] = parseEntry(batch2['log-' + tabDef.key + '-registros']);
+        logData[tabDef.key + '-empreendimentos'] = parseEntry(batch2['log-' + tabDef.key + '-empreendimentos']);
+        renderLogTable(tabDef.key + '-empreendimentos');
+        renderDiarioRegistros(tabDef.key);
+        popularFiltroEmpreendimentoRelatorio(tabDef.key);
       }else{
         const rows = parseEntry(batch2['log-' + tabDef.key]);
         mountCustomTab(tabDef);
