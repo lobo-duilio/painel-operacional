@@ -2223,6 +2223,12 @@ function mountEmbedTab(tabDef){
  * "{chave}-saida". A Estoque é sempre calculada, nunca editada direto.
  */
 let stockTabBaseKeys = [];
+let stockSearchQuery = {};
+
+function setStockSearchQuery(tabKey, value){
+  stockSearchQuery[tabKey] = value || '';
+  renderStockEstoque(tabKey);
+}
 
 function mountStockTab(tabDef){
   if(document.getElementById('view-' + tabDef.key)) return;
@@ -2283,7 +2289,15 @@ function mountStockTab(tabDef){
       '<button onclick="showSub(\'' + tabDef.key + '\',\'entrada\')">Entrada</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'saida\')">Saída</button>' +
     '</div>' +
-    '<div class="subview active" id="sub-' + tabDef.key + '-estoque"></div>' +
+    '<div class="subview active" id="sub-' + tabDef.key + '-estoque">' +
+      '<div class="filters-row" style="margin-bottom:14px;">' +
+        '<div></div>' +
+        '<div class="filters-right">' +
+          '<input type="text" class="search-box" placeholder="Buscar item…" oninput="setStockSearchQuery(\'' + tabDef.key + '\', this.value)">' +
+        '</div>' +
+      '</div>' +
+      '<div id="stockEstoqueContent-' + tabDef.key + '"></div>' +
+    '</div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-itens"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-entrada"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-saida"></div>';
@@ -2292,7 +2306,7 @@ function mountStockTab(tabDef){
 
 /** Calcula o estoque (Entradas − Saídas por item) de uma aba de estoque, cruzando com o catálogo de Itens. */
 function renderStockEstoque(tabKey){
-  const container = document.getElementById('sub-' + tabKey + '-estoque');
+  const container = document.getElementById('stockEstoqueContent-' + tabKey);
   if(!container) return;
 
   const ent = logData[tabKey + '-entrada'] || [];
@@ -2313,7 +2327,13 @@ function renderStockEstoque(tabKey){
   const totalEnt = sum(ent), totalSai = sum(sai);
   const totalEstoque = totalEnt - totalSai;
 
-  const rows = Array.from(nomes).sort().map(nome => {
+  const query = (stockSearchQuery[tabKey] || '').toLowerCase();
+  let nomesFiltrados = Array.from(nomes).sort();
+  if(query){
+    nomesFiltrados = nomesFiltrados.filter(n => n.toLowerCase().includes(query));
+  }
+
+  const rows = nomesFiltrados.map(nome => {
     const e = sum(ent, nome), s = sum(sai, nome);
     const estoque = e - s;
     const cat = catalogo[nome] || {};
@@ -2321,7 +2341,7 @@ function renderStockEstoque(tabKey){
       <td>${nome}</td><td>${cat.unidade||'—'}</td><td>${cat.localizacao||'—'}</td>
       <td>${e}</td><td>${s}</td><td style="font-weight:700">${estoque}</td>
     </tr>`;
-  }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum item cadastrado ou movimentado ainda.</td></tr>`;
+  }).join('') || `<tr class="empty-row"><td colspan="6">${query ? 'Nenhum item encontrado para "' + query + '".' : 'Nenhum item cadastrado ou movimentado ainda.'}</td></tr>`;
 
   const events = [];
   ent.forEach(r=>{ if(r.data) events.push({data:r.data, delta:(parseFloat(r.quantidade)||0)}); });
