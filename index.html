@@ -433,6 +433,39 @@
     background:var(--gray-light);
   }
 
+  .embasamento-picker{
+    max-height:220px;
+    overflow-y:auto;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:#FCFCFA;
+    margin:6px 0;
+    padding:6px;
+  }
+  .embasamento-categoria{
+    font-size:10px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    padding:6px 6px 3px;
+  }
+  .embasamento-item{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:transparent;
+    border:none;
+    border-bottom:1px solid var(--line);
+    padding:7px 8px;
+    font-size:12px;
+    font-family:inherit;
+    color:var(--ink);
+    cursor:pointer;
+    white-space:pre-line;
+  }
+  .embasamento-item:hover{background:var(--steel-light);}
+
   @media print{
     body *{visibility:hidden;}
     .report-print-area, .report-print-area *{visibility:visible;}
@@ -1390,7 +1423,7 @@ function updateUserInfo(){
 function clientKeyToTabId(key){
   if(key.indexOf('roedores-') === 0) return 'roedores';
   if(key.indexOf('aves-') === 0) return 'aves';
-  const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos)$/);
+  const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos)$/);
   if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   return key; // abas personalizadas: a própria chave já é o tabId
@@ -2443,6 +2476,13 @@ function mountDiarioTab(tabDef){
       {key:'nome', label:'Nome do empreendimento', type:'text'}
     ]
   };
+  LOG_CONFIGS[tabDef.key + '-embasamentos'] = {
+    container: 'sub-' + tabDef.key + '-embasamentos',
+    cols: [
+      {key:'categoria', label:'Categoria', type:'text'},
+      {key:'texto', label:'Texto do embasamento', type:'textarea'}
+    ]
+  };
 
   const nav = document.getElementById('mainnav');
   const addBtn = document.getElementById('nav-add-tab');
@@ -2469,10 +2509,12 @@ function mountDiarioTab(tabDef){
     '<div class="subnav">' +
       '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'embasamentos\')">Embasamentos técnicos</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\')">Relatório</button>' +
     '</div>' +
     '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-embasamentos"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-relatorio">' +
       buildRelatorioFormHtml(tabDef.key) +
       '<div id="relatorioResultado-' + tabDef.key + '"></div>' +
@@ -2561,7 +2603,14 @@ function renderDiarioRegistros(tabKey){
         <div><label>Data</label><input type="date" id="diarioNovaData-${tabKey}"></div>
         <div><label>Empreendimento</label><select id="diarioNovoEmp-${tabKey}">${optionsHtml}</select></div>
         <div class="full"><label>Descrição / atividades realizadas</label><input type="text" id="diarioNovaDescricao-${tabKey}" placeholder="O que foi feito hoje…"></div>
-        <div class="full"><label>Observação técnica</label><input type="text" id="diarioNovaObs-${tabKey}" placeholder="Embasamento técnico, observações, pendências…"></div>
+        <div class="full">
+          <label style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Observação técnica</span>
+            <button type="button" onclick="toggleEmbasamentoPicker('${tabKey}')" style="border:none;background:transparent;color:var(--steel);font-size:11px;font-weight:700;cursor:pointer;text-transform:none;letter-spacing:0;">📋 Inserir embasamento</button>
+          </label>
+          <div id="embasamentoPicker-${tabKey}" class="embasamento-picker" style="display:none;"></div>
+          <textarea id="diarioNovaObs-${tabKey}" placeholder="Embasamento técnico, observações, pendências…" style="min-height:70px;"></textarea>
+        </div>
         <div class="full"><label>Fotos (pode escolher várias)</label><input type="file" id="diarioNovasFotos-${tabKey}" accept="image/*" multiple></div>
       </div>
       <p class="modal-error" id="diarioErro-${tabKey}"></p>
@@ -2570,6 +2619,47 @@ function renderDiarioRegistros(tabKey){
   ` : '';
 
   container.innerHTML = addFormHtml + '<div class="cards">' + rowsHtml + '</div>';
+}
+
+/** Abre/fecha a listinha de embasamentos pré-prontos pra clicar e inserir na Observação técnica. */
+function toggleEmbasamentoPicker(tabKey){
+  const el = document.getElementById('embasamentoPicker-' + tabKey);
+  if(!el) return;
+  const isOpen = el.style.display !== 'none';
+  if(isOpen){
+    el.style.display = 'none';
+    return;
+  }
+
+  const lista = logData[tabKey + '-embasamentos'] || [];
+  if(lista.length === 0){
+    el.innerHTML = '<p style="font-size:11.5px;color:var(--ink-soft);padding:8px;margin:0;">Nenhum embasamento cadastrado ainda. Cadastre na aba "Embasamentos técnicos".</p>';
+  }else{
+    const porCategoria = {};
+    lista.forEach(item => {
+      const cat = item.categoria || 'Sem categoria';
+      if(!porCategoria[cat]) porCategoria[cat] = [];
+      porCategoria[cat].push(item);
+    });
+    el.innerHTML = Object.keys(porCategoria).map(cat => {
+      const itensHtml = porCategoria[cat].map(item => {
+        const textoEscapado = String(item.texto||'').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+        const textoVisivel = String(item.texto||'').replace(/</g,'&lt;');
+        return `<button type="button" class="embasamento-item" onclick="insertEmbasamento('${tabKey}','${textoEscapado}')">${textoVisivel}</button>`;
+      }).join('');
+      return `<div class="embasamento-categoria">${cat}</div>${itensHtml}`;
+    }).join('');
+  }
+  el.style.display = '';
+}
+
+/** Insere (acrescenta) o texto do embasamento clicado no campo de Observação técnica do registro. */
+function insertEmbasamento(tabKey, texto){
+  const textarea = document.getElementById('diarioNovaObs-' + tabKey);
+  if(!textarea) return;
+  textarea.value = textarea.value ? (textarea.value + '\n' + texto) : texto;
+  document.getElementById('embasamentoPicker-' + tabKey).style.display = 'none';
+  textarea.focus();
 }
 
 async function addDiarioRegistro(tabKey){
@@ -2913,7 +3003,7 @@ async function deleteCustomTab(tabKey, label){
   delete LOG_CONFIGS[tabKey];
   delete logData[tabKey];
   delete activityBoardFilters[tabKey];
-  ['itens','entrada','saida','registros','empreendimentos'].forEach(suf => {
+  ['itens','entrada','saida','registros','empreendimentos','embasamentos'].forEach(suf => {
     delete LOG_CONFIGS[tabKey + '-' + suf];
     delete logData[tabKey + '-' + suf];
   });
@@ -3018,7 +3108,9 @@ async function loadAndMountCustomTabs(){
       diarioTabBaseKeys.push(tabDef.key);
       await loadLogData(tabDef.key + '-registros');
       await loadLogData(tabDef.key + '-empreendimentos');
+      await loadLogData(tabDef.key + '-embasamentos');
       renderLogTable(tabDef.key + '-empreendimentos');
+      renderLogTable(tabDef.key + '-embasamentos');
       renderDiarioRegistros(tabDef.key);
       popularFiltroEmpreendimentoRelatorio(tabDef.key);
     }else{
@@ -4131,7 +4223,7 @@ async function bulkLoadInitialData(){
       if(t.type === 'stock'){
         customKeys.push('log-' + t.key + '-itens', 'log-' + t.key + '-entrada', 'log-' + t.key + '-saida');
       }else if(t.type === 'diario'){
-        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos');
+        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-embasamentos');
       }else{
         customKeys.push('log-' + t.key);
       }
@@ -4169,7 +4261,9 @@ async function bulkLoadInitialData(){
         diarioTabBaseKeys.push(tabDef.key);
         logData[tabDef.key + '-registros'] = parseEntry(batch2['log-' + tabDef.key + '-registros']);
         logData[tabDef.key + '-empreendimentos'] = parseEntry(batch2['log-' + tabDef.key + '-empreendimentos']);
+        logData[tabDef.key + '-embasamentos'] = parseEntry(batch2['log-' + tabDef.key + '-embasamentos']);
         renderLogTable(tabDef.key + '-empreendimentos');
+        renderLogTable(tabDef.key + '-embasamentos');
         renderDiarioRegistros(tabDef.key);
         popularFiltroEmpreendimentoRelatorio(tabDef.key);
       }else{
