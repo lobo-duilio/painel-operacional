@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Dashboard Operacional</title>
 
 <!-- PWA: permite "Adicionar à tela inicial" no Android e iOS, com cara de app -->
@@ -1718,7 +1718,7 @@ async function storageGet(key){
   if(APPS_SCRIPT_URL){
     let res, json;
     try{
-      res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : ''));
+      res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : '') + '&_=' + Date.now(), { cache: 'no-store' });
     }catch(e){
       throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
     }
@@ -1755,7 +1755,7 @@ async function storageGetBatch(keys){
   if(!APPS_SCRIPT_URL || keys.length === 0) return {};
   let res, json;
   try{
-    res = await fetch(APPS_SCRIPT_URL + '?action=get&keys=' + encodeURIComponent(keys.join(',')) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : ''));
+    res = await fetch(APPS_SCRIPT_URL + '?action=get&keys=' + encodeURIComponent(keys.join(',')) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : '') + '&_=' + Date.now(), { cache: 'no-store' });
   }catch(e){
     throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
   }
