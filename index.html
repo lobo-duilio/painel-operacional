@@ -725,7 +725,7 @@
     background:#FBFAF6;
     padding:10px;
   }
-  table.logtable input, table.logtable textarea{
+  table.logtable input, table.logtable textarea, table.logtable select{
     width:100%;
     border:1px solid var(--line);
     border-radius:6px;
@@ -772,7 +772,7 @@
     .search-box{min-width:0;flex:1 1 auto;}
     .field textarea, .field input,
     .modal-form-grid input, .modal-form-grid select,
-    .login-field input, table.logtable input, table.logtable textarea{
+    .login-field input, table.logtable input, table.logtable textarea, table.logtable select{
       font-size:16px; /* impede o iOS Safari de dar zoom ao focar o campo */
     }
   }
@@ -2340,7 +2340,7 @@ function mountStockTab(tabDef){
     container: 'sub-' + tabDef.key + '-entrada',
     cols: [
       {key:'data', label:'Data', type:'date'},
-      {key:'item', label:'Item', type:'text'},
+      {key:'item', label:'Item', type:'select', sourceKey: tabDef.key + '-itens', sourceField:'item'},
       {key:'quantidade', label:'Quantidade', type:'number'},
       {key:'origem', label:'Origem / fornecedor', type:'text'}
     ]
@@ -2349,7 +2349,7 @@ function mountStockTab(tabDef){
     container: 'sub-' + tabDef.key + '-saida',
     cols: [
       {key:'data', label:'Data', type:'date'},
-      {key:'item', label:'Item', type:'text'},
+      {key:'item', label:'Item', type:'select', sourceKey: tabDef.key + '-itens', sourceField:'item'},
       {key:'quantidade', label:'Quantidade', type:'number'},
       {key:'destino', label:'Destino / responsável', type:'text'}
     ]
@@ -2468,6 +2468,11 @@ function maybeRenderStockEstoque(key){
   const match = key.match(/^(.+)-(itens|entrada|saida)$/);
   if(match && stockTabBaseKeys.indexOf(match[1]) !== -1){
     renderStockEstoque(match[1]);
+    if(match[2] === 'itens'){
+      // O catálogo de Itens mudou: atualiza as opções do menu "Item" em Entrada/Saída.
+      renderLogTable(match[1] + '-entrada');
+      renderLogTable(match[1] + '-saida');
+    }
   }
 }
 
@@ -3879,6 +3884,13 @@ function inputHtml(col, rowId){
   return `<input type="${col.type}" ${idAttr} onchange="editLogCell(this)">`;
 }
 
+/** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
+function getSelectOptionsForCol(c){
+  const rows = logData[c.sourceKey] || [];
+  const valores = rows.map(r => r[c.sourceField]).filter(Boolean);
+  return Array.from(new Set(valores)).sort();
+}
+
 function renderLogTable(key){
   const cfg = LOG_CONFIGS[key];
   const rows = logData[key] || [];
@@ -3896,6 +3908,16 @@ function renderLogTable(key){
       if(c.type === 'date' && typeof val === 'string' && val.indexOf('T') !== -1){
         val = val.split('T')[0];
       }
+      if(c.type === 'select'){
+        const opcoes = getSelectOptionsForCol(c);
+        const foraDoCatalogo = val && opcoes.indexOf(val) === -1;
+        const listaCompleta = foraDoCatalogo ? [val].concat(opcoes) : opcoes;
+        const optsHtml = listaCompleta.map(o => {
+          const rotulo = (o === val && foraDoCatalogo) ? o + ' (não está no catálogo)' : o;
+          return `<option value="${o}" ${o===val?'selected':''}>${rotulo}</option>`;
+        }).join('');
+        return `<td><select onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)"><option value="">Selecione…</option>${optsHtml}</select></td>`;
+      }
       if(c.type==='textarea'){
         return `<td><textarea onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)">${val}</textarea></td>`;
       }
@@ -3908,6 +3930,11 @@ function renderLogTable(key){
   }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione abaixo.</td></tr>`;
 
   const addCells = cfg.cols.map(c=>{
+    if(c.type === 'select'){
+      const opcoes = getSelectOptionsForCol(c);
+      const optsHtml = opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
+      return `<td><select id="new-${key}-${c.key}"><option value="">Selecione…</option>${optsHtml}</select></td>`;
+    }
     if(c.type==='textarea'){
       return `<td><textarea id="new-${key}-${c.key}" placeholder="${c.label}"></textarea></td>`;
     }
