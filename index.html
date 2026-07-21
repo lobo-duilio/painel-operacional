@@ -4015,24 +4015,21 @@ function showSub(module, name){
   document.querySelectorAll('#view-'+module+' .subnav button').forEach(b=>b.classList.remove('active'));
   event.target.classList.add('active');
 
-  // Abas de fauna, stock e diário: re-renderiza a sub-aba ao exibir, porque
-  // na criação o container ainda não existia no DOM (lazy render).
+  // Re-renderiza a sub-aba ao exibir, garantindo que o conteúdo aparece
+  // mesmo que o container estivesse oculto quando os dados chegaram.
+  const logKey = module + '-' + name;
+  if(LOG_CONFIGS[logKey]){
+    renderLogTable(logKey);
+  }
   if(faunaTabBaseKeys.indexOf(module) !== -1){
-    if(name === 'empreendimentos') renderLogTable(module + '-empreendimentos');
-    else if(name === 'especies') renderLogTable(module + '-especies');
-    else if(name === 'registros') renderFaunaRegistros(module);
+    if(name === 'registros') renderFaunaRegistros(module);
     else if(name === 'relatorio') popularFaunaRelatorio(module);
   }
   if(stockTabBaseKeys.indexOf(module) !== -1){
-    if(name === 'itens') renderLogTable(module + '-itens');
-    else if(name === 'entrada') renderLogTable(module + '-entrada');
-    else if(name === 'saida') renderLogTable(module + '-saida');
-    else if(name === 'estoque') renderStockEstoque(module);
+    if(name === 'estoque') renderStockEstoque(module);
   }
   if(diarioTabBaseKeys.indexOf(module) !== -1){
-    if(name === 'empreendimentos') renderLogTable(module + '-empreendimentos');
-    else if(name === 'embasamentos') renderLogTable(module + '-embasamentos');
-    else if(name === 'registros') renderDiarioRegistros(module);
+    if(name === 'registros') renderDiarioRegistros(module);
     else if(name === 'relatorio') popularFiltroEmpreendimentoRelatorio(module);
   }
 }
@@ -4253,7 +4250,7 @@ function renderLogTable(key){
   if(!cfg) return;
   const rows = logData[key] || [];
   const container = document.getElementById(cfg.container);
-  if(!container) return; // ainda não montado no DOM — será chamado novamente ao mostrar a sub-aba
+  if(!container) return;
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
 
