@@ -4706,6 +4706,7 @@ async function bulkLoadInitialData(){
     customTabsRegistry.forEach(tabDef => {
       const parseEntry = (entry) => (entry && entry.value) ? (function(){ try{ return JSON.parse(entry.value); }catch(e){ return []; } })() : [];
 
+      try{
       if(tabDef.type === 'activity'){
         const rows = parseEntry(batch2['log-' + tabDef.key]);
         mountActivityBoard(tabDef);
@@ -4750,6 +4751,9 @@ async function bulkLoadInitialData(){
         logData[tabDef.key] = rows;
         renderLogTable(tabDef.key);
       }
+      }catch(errTab){
+        console.error('Erro ao carregar a aba "' + tabDef.label + '" (' + tabDef.key + '):', errTab);
+      }
     });
   }
 
@@ -4759,38 +4763,48 @@ async function bulkLoadInitialData(){
 }
 
 async function init(skipUrlReload){
-  if(!skipUrlReload){
-    APPS_SCRIPT_URL = await getAppsScriptUrl();
-  }
-  updateSyncStatus();
-
-  if(!APPS_SCRIPT_URL){
-    // Sem Google Sheets configurado: modo local dentro do Claude, sem exigir login.
-    showApp();
-    await loadData();
-    await Promise.all(Object.keys(LOG_CONFIGS).map(key => loadLogData(key)));
-    renderAllLogs();
-    await loadAndMountCustomTabs();
-    const checklistContainer = document.getElementById('checklist-results-container');
-    if(checklistContainer){
-      checklistContainer.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Configure o Google Sheets para ver as respostas aqui.</p>';
+  try{
+    if(!skipUrlReload){
+      APPS_SCRIPT_URL = await getAppsScriptUrl();
     }
-    document.getElementById('lastUpdate').textContent =
-      "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
-    return;
-  }
+    updateSyncStatus();
 
-  if(!skipUrlReload){
-    SESSION = await getStoredSession();
-  }
-  if(!SESSION || !SESSION.token){
-    showLogin();
-    return;
-  }
+    if(!APPS_SCRIPT_URL){
+      // Sem Google Sheets configurado: modo local dentro do Claude, sem exigir login.
+      showApp();
+      await loadData();
+      await Promise.all(Object.keys(LOG_CONFIGS).map(key => loadLogData(key)));
+      renderAllLogs();
+      await loadAndMountCustomTabs();
+      const checklistContainer = document.getElementById('checklist-results-container');
+      if(checklistContainer){
+        checklistContainer.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Configure o Google Sheets para ver as respostas aqui.</p>';
+      }
+      document.getElementById('lastUpdate').textContent =
+        "Dados carregados às " + new Date().toLocaleTimeString('pt-BR');
+      return;
+    }
 
-  showApp();
-  await bulkLoadInitialData();
-  applyTabAccess();
+    if(!skipUrlReload){
+      SESSION = await getStoredSession();
+    }
+    if(!SESSION || !SESSION.token){
+      showLogin();
+      return;
+    }
+
+    showApp();
+    await bulkLoadInitialData();
+    applyTabAccess();
+  }catch(err){
+    console.error('Erro ao carregar o dashboard:', err);
+    const el = document.getElementById('lastUpdate');
+    if(el){
+      el.innerHTML = '⚠️ <span style="color:#ffb4b4;">Erro ao carregar: ' +
+        String(err && err.message ? err.message : err).replace(/</g,'&lt;') +
+        '</span> — tire um print desta mensagem e mande pro suporte.';
+    }
+  }
 }
 
 init();
