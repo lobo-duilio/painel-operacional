@@ -1271,6 +1271,9 @@ let APPS_SCRIPT_URL = null;
    Apps Script aqui embaixo, entre as aspas: */
 const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLvpvrmDgtd2VZU4e0NTaIBwFTRMTIECRAHh8W-l31D4S1sPkP0bD8dNy5wASW41P0cA/exec";
 
+/** Link do Google Forms de "Controle de fauna sinantrópica" (cole o link real aqui pra ativar o botão "Preencher novo registro"). */
+const FAUNA_FORM_URL = "";
+
 /* ---- Camada de armazenamento: usa Google Sheets (Apps Script) se configurado,
    senão cai de volta no armazenamento do Claude (window.storage) ---- */
 
@@ -2348,7 +2351,8 @@ function mountStockTab(tabDef){
       {key:'unidade', label:'Unidade de medida', type:'text'},
       {key:'localizacao', label:'Localização', type:'text'},
       {key:'observacao', label:'Observação (CA / validade / etc)', type:'text'}
-    ]
+    ],
+    sortBy: 'item'
   };
   LOG_CONFIGS[tabDef.key + '-entrada'] = {
     container: 'sub-' + tabDef.key + '-entrada',
@@ -2536,11 +2540,13 @@ function mountFaunaTab(tabDef){
   // (acontece quando o dashboard recarrega e a aba já foi montada antes).
   LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
     container: 'sub-' + tabDef.key + '-empreendimentos',
-    cols: [{key:'nome', label:'Nome do empreendimento', type:'text'}]
+    cols: [{key:'nome', label:'Nome do empreendimento', type:'text'}],
+    sortBy: 'nome'
   };
   LOG_CONFIGS[tabDef.key + '-especies'] = {
     container: 'sub-' + tabDef.key + '-especies',
-    cols: [{key:'nome', label:'Nome da espécie', type:'text'}]
+    cols: [{key:'nome', label:'Nome da espécie', type:'text'}],
+    sortBy: 'nome'
   };
 
   if(document.getElementById('view-' + tabDef.key)) return;
@@ -2558,6 +2564,9 @@ function mountFaunaTab(tabDef){
   const deleteTabBtn = (!APPS_SCRIPT_URL || isAdmin)
     ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
     : '';
+  const formLinkBtn = FAUNA_FORM_URL
+    ? `<a class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);text-decoration:none;" href="${FAUNA_FORM_URL}" target="_blank" rel="noopener">Preencher novo registro</a>`
+    : '';
 
   const wrap = document.querySelector('.wrap');
   const view = document.createElement('div');
@@ -2566,7 +2575,7 @@ function mountFaunaTab(tabDef){
   view.innerHTML =
     '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
     '<p>Controle de fauna sinantrópica nociva — registros de campo</p></div>' +
-    '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
+    '<div style="display:flex;gap:8px;">' + formLinkBtn + deleteTabBtn + '</div></div>' +
     '<div class="subnav">' +
       '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
@@ -2588,8 +2597,8 @@ function renderFaunaRegistros(tabKey){
   if(!container) return;
 
   const registros = logData[tabKey + '-registros'] || [];
-  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
-  const especies = (logData[tabKey + '-especies'] || []).map(e => e.nome).filter(Boolean);
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const especies = (logData[tabKey + '-especies'] || []).map(e => e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const canManage = canManageTab(tabKey);
 
   const empOpts = '<option value="">Selecione…</option>' + empreendimentos.map(n=>`<option value="${n}">${n}</option>`).join('');
@@ -2706,8 +2715,20 @@ function buildFaunaRelatorioFormHtml(tabKey){
   return `
     <div class="logtable-wrap" style="margin-bottom:16px;">
       <div class="modal-form-grid" style="margin-bottom:12px;">
-        <div><label>De</label><input type="date" id="faunaRelDe-${tabKey}"></div>
-        <div><label>Até</label><input type="date" id="faunaRelAte-${tabKey}"></div>
+        <div>
+          <label style="display:flex;justify-content:space-between;align-items:center;">
+            <span>De</span>
+            <button type="button" onclick="setFaunaDataExtremo('${tabKey}','de')" style="border:none;background:transparent;color:var(--steel);font-size:10.5px;font-weight:700;cursor:pointer;text-transform:none;letter-spacing:0;">⏮ Mais antigo</button>
+          </label>
+          <input type="date" id="faunaRelDe-${tabKey}">
+        </div>
+        <div>
+          <label style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Até</span>
+            <button type="button" onclick="setFaunaDataExtremo('${tabKey}','ate')" style="border:none;background:transparent;color:var(--steel);font-size:10.5px;font-weight:700;cursor:pointer;text-transform:none;letter-spacing:0;">Mais recente ⏭</button>
+          </label>
+          <input type="date" id="faunaRelAte-${tabKey}">
+        </div>
         <div><label>Empreendimento</label><select id="faunaRelEmp-${tabKey}"><option value="">Todos</option></select></div>
         <div><label>Espécie</label><select id="faunaRelEsp-${tabKey}"><option value="">Todas</option></select></div>
       </div>
@@ -2716,12 +2737,27 @@ function buildFaunaRelatorioFormHtml(tabKey){
   `;
 }
 
+/** Preenche o campo De/Até com a data mais antiga/mais recente encontrada nos registros já carregados. */
+function setFaunaDataExtremo(tabKey, tipo){
+  const registros = logData[tabKey + '-registros'] || [];
+  const datas = registros.map(r => (r.data||'').split('T')[0]).filter(Boolean).sort();
+  if(datas.length === 0){
+    alert('Ainda não há registros com data pra usar como referência.');
+    return;
+  }
+  if(tipo === 'de'){
+    document.getElementById('faunaRelDe-' + tabKey).value = datas[0];
+  }else{
+    document.getElementById('faunaRelAte-' + tabKey).value = datas[datas.length-1];
+  }
+}
+
 function popularFaunaRelatorio(tabKey){
   const selEmp = document.getElementById('faunaRelEmp-' + tabKey);
   const selEsp = document.getElementById('faunaRelEsp-' + tabKey);
   if(!selEmp || !selEsp) return;
-  const emps = (logData[tabKey + '-empreendimentos']||[]).map(e=>e.nome).filter(Boolean);
-  const esps = (logData[tabKey + '-especies']||[]).map(e=>e.nome).filter(Boolean);
+  const emps = (logData[tabKey + '-empreendimentos']||[]).map(e=>e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const esps = (logData[tabKey + '-especies']||[]).map(e=>e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   selEmp.innerHTML = '<option value="">Todos</option>' + emps.map(n=>`<option value="${n}">${n}</option>`).join('');
   selEsp.innerHTML = '<option value="">Todas</option>' + esps.map(n=>`<option value="${n}">${n}</option>`).join('');
 }
@@ -2833,7 +2869,8 @@ function mountDiarioTab(tabDef){
     container: 'sub-' + tabDef.key + '-empreendimentos',
     cols: [
       {key:'nome', label:'Nome do empreendimento', type:'text'}
-    ]
+    ],
+    sortBy: 'nome'
   };
   LOG_CONFIGS[tabDef.key + '-embasamentos'] = {
     container: 'sub-' + tabDef.key + '-embasamentos',
@@ -2928,7 +2965,7 @@ function renderDiarioRegistros(tabKey){
   if(!container) return;
 
   const registros = logData[tabKey + '-registros'] || [];
-  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const canManage = canManageTab(tabKey);
 
   const optionsHtml = '<option value="">Selecione…</option>' + empreendimentos.map(n => `<option value="${n}">${n}</option>`).join('');
@@ -3161,7 +3198,7 @@ function buildRelatorioFormHtml(tabKey, generatorFn){
 function popularFiltroEmpreendimentoRelatorio(tabKey){
   const sel = document.getElementById('relatorioEmp-' + tabKey);
   if(!sel) return;
-  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   sel.innerHTML = '<option value="">Todos</option>' + empreendimentos.map(n => `<option value="${n}">${n}</option>`).join('');
 }
 
@@ -4258,6 +4295,9 @@ function renderLogTable(key){
 
   try{
   const rows = logData[key] || [];
+  if(cfg.sortBy){
+    rows.sort((a,b) => String(a[cfg.sortBy]||'').localeCompare(String(b[cfg.sortBy]||''), 'pt-BR'));
+  }
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
 
