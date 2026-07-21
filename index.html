@@ -1452,7 +1452,7 @@ function updateUserInfo(){
 function clientKeyToTabId(key){
   if(key.indexOf('roedores-') === 0) return 'roedores';
   if(key.indexOf('aves-') === 0) return 'aves';
-  const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos)$/);
+  const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos|especies)$/);
   if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && faunaTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
@@ -4251,9 +4251,11 @@ function getSelectOptionsForCol(c){
 function renderLogTable(key){
   const cfg = LOG_CONFIGS[key];
   if(!cfg) return;
-  const rows = logData[key] || [];
   const container = document.getElementById(cfg.container);
   if(!container) return;
+
+  try{
+  const rows = logData[key] || [];
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
 
@@ -4314,6 +4316,11 @@ function renderLogTable(key){
       </table>
     </div>
   `;
+  }catch(err){
+    console.error('Erro ao desenhar a tabela "' + key + '":', err);
+    container.innerHTML = '<p style="color:#B24A3C;font-size:12.5px;padding:12px;background:#FBEAE7;border-radius:8px;">⚠️ Erro ao montar esta tabela: ' +
+      String(err && err.message ? err.message : err).replace(/</g,'&lt;') + '</p>';
+  }
 }
 
 function addLogRow(key){
