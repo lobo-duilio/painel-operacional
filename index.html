@@ -1079,6 +1079,8 @@
           <option value="activity">Quadro de atividades (como o Operacional)</option>
           <option value="stock">Controle de estoque (itens, entrada, saída — como Roedores)</option>
           <option value="diario">Registro diário com fotos (por empreendimento)</option>
+          <option value="fauna">Controle de fauna sinantrópica (espécie + métodos)</option>
+          <option value="fauna">Controle de fauna (espécie + métodos)</option>
           <option value="embed">Formulário ou link incorporado</option>
         </select>
       </div>
@@ -1453,6 +1455,7 @@ function clientKeyToTabId(key){
   const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos)$/);
   if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
+  if(suffixMatch && faunaTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   return key; // abas personalizadas: a própria chave já é o tabId
 }
 
@@ -2235,6 +2238,8 @@ async function submitNewTab(){
     tabDef = { key: key, label: nome, type: 'stock' };
   }else if(tipo === 'diario'){
     tabDef = { key: key, label: nome, type: 'diario' };
+  }else if(tipo === 'fauna'){
+    tabDef = { key: key, label: nome, type: 'fauna' };
   }else{
     tabDef = { key: key, label: nome, type: 'activity' };
   }
@@ -2267,6 +2272,13 @@ async function submitNewTab(){
     logData[key + '-empreendimentos'] = [];
     renderLogTable(key + '-empreendimentos');
     renderDiarioRegistros(key);
+  }else if(tipo === 'fauna'){
+    mountFaunaTab(tabDef);
+    faunaTabBaseKeys.push(key);
+    logData[key + '-registros'] = [];
+    logData[key + '-empreendimentos'] = [];
+    renderLogTable(key + '-empreendimentos');
+    renderLogTable(key + '-registros');
   }else{
     mountActivityBoard(tabDef);
     logData[key] = [];
@@ -2497,7 +2509,316 @@ function maybeRefreshDiarioDropdowns(key){
  * pronto para imprimir/salvar como PDF pelo navegador.
  */
 
-let diarioTabBaseKeys = [];
+/* =====================================================================
+   CONTROLE DE FAUNA SINANTRÓPICA — aba especializada
+   =====================================================================
+ * Tipo de aba "fauna": campos reais do formulário de campo (espécie,
+ * método, horário, responsáveis, etc.). Suporta importação de histórico
+ * via CSV colado direto na planilha. Gerador de relatório por período /
+ * empreendimento com gráficos de total por método e por espécie.
+ */
+
+let faunaTabBaseKeys = [];
+
+const FAUNA_METODOS = ['falcoaria','afugentamento','armadilha','manual','retirada_ovos','eliminacao_direta','puca'];
+const FAUNA_METODO_LABELS = {
+  falcoaria:'Falcoaria', afugentamento:'Afugentamento', armadilha:'Armadilha',
+  manual:'Manual', retirada_ovos:'Retirada de ovos',
+  eliminacao_direta:'Eliminação direta', puca:'Puçá'
+};
+
+function mountFaunaTab(tabDef){
+  if(document.getElementById('view-' + tabDef.key)) return;
+
+  LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
+    container: 'sub-' + tabDef.key + '-empreendimentos',
+    cols: [{key:'nome', label:'Nome do empreendimento', type:'text'}]
+  };
+  LOG_CONFIGS[tabDef.key + '-especies'] = {
+    container: 'sub-' + tabDef.key + '-especies',
+    cols: [{key:'nome', label:'Nome da espécie', type:'text'}]
+  };
+
+  const nav = document.getElementById('mainnav');
+  const addBtn = document.getElementById('nav-add-tab');
+  const btn = document.createElement('button');
+  btn.id = 'nav-' + tabDef.key;
+  btn.textContent = tabDef.label;
+  btn.onclick = function(){ showView(tabDef.key); };
+  nav.insertBefore(btn, addBtn);
+
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const safeLabel = tabDef.label.replace(/'/g, "\\'");
+  const deleteTabBtn = (!APPS_SCRIPT_URL || isAdmin)
+    ? `<button class="btn" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="deleteCustomTab('${tabDef.key}','${safeLabel}')">Excluir esta aba</button>`
+    : '';
+
+  const wrap = document.querySelector('.wrap');
+  const view = document.createElement('div');
+  view.className = 'view';
+  view.id = 'view-' + tabDef.key;
+  view.innerHTML =
+    '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
+    '<p>Controle de fauna sinantrópica nociva — registros de campo</p></div>' +
+    '<div style="display:flex;gap:8px;">' + deleteTabBtn + '</div></div>' +
+    '<div class="subnav">' +
+      '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\')">Espécies</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\')" onclick="popularFaunaRelatorio(\'' + tabDef.key + '\')">Relatório</button>' +
+    '</div>' +
+    '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-especies"></div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-relatorio">' +
+      buildFaunaRelatorioFormHtml(tabDef.key) +
+      '<div id="faunaRelatorioResultado-' + tabDef.key + '"></div>' +
+    '</div>';
+  wrap.appendChild(view);
+}
+
+function renderFaunaRegistros(tabKey){
+  const container = document.getElementById('sub-' + tabKey + '-registros');
+  if(!container) return;
+
+  const registros = logData[tabKey + '-registros'] || [];
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean);
+  const especies = (logData[tabKey + '-especies'] || []).map(e => e.nome).filter(Boolean);
+  const canManage = canManageTab(tabKey);
+
+  const empOpts = '<option value="">Selecione…</option>' + empreendimentos.map(n=>`<option value="${n}">${n}</option>`).join('');
+  const espOpts = '<option value="">Selecione…</option>' + especies.map(n=>`<option value="${n}">${n}</option>`).join('');
+
+  const addFormHtml = canManage ? `
+    <div class="logtable-wrap" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Novo registro de campo</div>
+      <div class="modal-form-grid">
+        <div><label>Data</label><input type="date" id="faunaNovaData-${tabKey}"></div>
+        <div><label>Empreendimento</label><select id="faunaNovoEmp-${tabKey}">${empOpts}</select></div>
+        <div><label>Início</label><input type="time" id="faunaNovoInicio-${tabKey}"></div>
+        <div><label>Fim</label><input type="time" id="faunaNovoFim-${tabKey}"></div>
+        <div><label>Responsáveis</label><input type="text" id="faunaNovoResp-${tabKey}" placeholder="Nome(s)"></div>
+        <div><label>Espécie</label><select id="faunaNovaEsp-${tabKey}">${espOpts}</select></div>
+        <div><label>Falcoaria</label><input type="number" min="0" value="0" id="faunaFalcoaria-${tabKey}"></div>
+        <div><label>Afugentamento</label><input type="number" min="0" value="0" id="faunaAfugentamento-${tabKey}"></div>
+        <div><label>Armadilha</label><input type="number" min="0" value="0" id="faunaArmadilha-${tabKey}"></div>
+        <div><label>Manual</label><input type="number" min="0" value="0" id="faunaManual-${tabKey}"></div>
+        <div><label>Retirada de ovos</label><input type="number" min="0" value="0" id="faunaRetiradaOvos-${tabKey}"></div>
+        <div><label>Eliminação direta</label><input type="number" min="0" value="0" id="faunaEliminacao-${tabKey}"></div>
+        <div><label>Puçá</label><input type="number" min="0" value="0" id="faunaPuca-${tabKey}"></div>
+        <div><label>Turno</label><input type="text" id="faunaNovoTurno-${tabKey}" placeholder="Diurno / Noturno"></div>
+        <div class="full"><label>Observação</label><input type="text" id="faunaNovaObs-${tabKey}" placeholder="Observações livres"></div>
+        <div><label>Veículo</label><input type="text" id="faunaNovoVeiculo-${tabKey}" placeholder="Placa ou descrição"></div>
+      </div>
+      <p class="modal-error" id="faunaErro-${tabKey}"></p>
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="addFaunaRegistro('${tabKey}')">Salvar registro</button>
+    </div>
+  ` : '';
+
+  const rowsHtml = registros.slice().reverse().slice(0, 200).map(r => {
+    const total = FAUNA_METODOS.reduce((acc,m)=>(acc + (parseInt(r[m])||0)),0);
+    const metodosHtml = FAUNA_METODOS.filter(m=>(parseInt(r[m])||0)>0)
+      .map(m=>`<span class="area-tag" style="font-size:10px;">${FAUNA_METODO_LABELS[m]}: ${r[m]}</span>`).join(' ');
+    const delBtn = canManage
+      ? `<button class="rowdel" onclick="deleteFaunaRegistro('${tabKey}',${r.id})">Remover</button>`
+      : '';
+    return `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag">${r.local||r.empreendimento||'—'}</span>
+              <span class="card-title">${formatDateShort(r.data)||r.data||''}</span>
+              ${r.inicio?`<span style="font-size:11px;color:var(--ink-soft);margin-left:6px;">${r.inicio}${r.fim?' – '+r.fim:''}</span>`:''}
+            </div>
+            <div class="card-sub">Espécie: <strong>${r.especie||'—'}</strong> · Responsáveis: ${r.responsaveis||'—'}</div>
+          </div>
+          ${delBtn}
+        </div>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+          ${metodosHtml || '<span style="font-size:11.5px;color:var(--ink-soft);">Nenhum método registrado</span>'}
+          <span style="font-size:11.5px;font-weight:700;margin-left:auto;">Total: ${total}</span>
+        </div>
+        ${r.observacao?`<div class="checklist-item-long" style="margin-top:8px;"><div class="ci-label">Observação</div><div class="ci-text">${String(r.observacao).replace(/</g,'&lt;')}</div></div>`:''}
+      </div>
+    `;
+  }).join('') || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum registro ainda.</p>';
+
+  const totalReg = registros.length;
+  const showing = Math.min(totalReg, 200);
+  const moreMsg = totalReg > 200 ? `<p style="font-size:11.5px;color:var(--ink-soft);text-align:center;margin:8px 0;">Exibindo os 200 registros mais recentes de ${totalReg} total. Use o Relatório para análises completas.</p>` : '';
+
+  container.innerHTML = addFormHtml + moreMsg + '<div class="cards">' + rowsHtml + '</div>';
+}
+
+async function addFaunaRegistro(tabKey){
+  const errEl = document.getElementById('faunaErro-' + tabKey);
+  errEl.textContent = '';
+  if(!canManageTab(tabKey)){ errEl.textContent = 'Sem permissão.'; return; }
+
+  const data = document.getElementById('faunaNovaData-' + tabKey).value;
+  const local = document.getElementById('faunaNovoEmp-' + tabKey).value;
+  const especie = document.getElementById('faunaNovaEsp-' + tabKey).value;
+
+  if(!data || !local || !especie){
+    errEl.textContent = 'Preencha ao menos a data, o empreendimento e a espécie.';
+    return;
+  }
+
+  const newRow = {
+    id: Date.now(), data, local, especie,
+    inicio: document.getElementById('faunaNovoInicio-' + tabKey).value,
+    fim: document.getElementById('faunaNovoFim-' + tabKey).value,
+    responsaveis: document.getElementById('faunaNovoResp-' + tabKey).value.trim(),
+    falcoaria: document.getElementById('faunaFalcoaria-' + tabKey).value || '0',
+    afugentamento: document.getElementById('faunaAfugentamento-' + tabKey).value || '0',
+    armadilha: document.getElementById('faunaArmadilha-' + tabKey).value || '0',
+    manual: document.getElementById('faunaManual-' + tabKey).value || '0',
+    retirada_ovos: document.getElementById('faunaRetiradaOvos-' + tabKey).value || '0',
+    eliminacao_direta: document.getElementById('faunaEliminacao-' + tabKey).value || '0',
+    puca: document.getElementById('faunaPuca-' + tabKey).value || '0',
+    turno: document.getElementById('faunaNovoTurno-' + tabKey).value.trim(),
+    observacao: document.getElementById('faunaNovaObs-' + tabKey).value.trim(),
+    veiculo: document.getElementById('faunaNovoVeiculo-' + tabKey).value.trim(),
+  };
+
+  if(!logData[tabKey + '-registros']) logData[tabKey + '-registros'] = [];
+  logData[tabKey + '-registros'].push(newRow);
+  await saveLog(tabKey + '-registros');
+  renderFaunaRegistros(tabKey);
+}
+
+async function deleteFaunaRegistro(tabKey, id){
+  if(!canManageTab(tabKey)){ alert('Sem permissão.'); return; }
+  if(!confirm('Remover este registro?')) return;
+  logData[tabKey + '-registros'] = (logData[tabKey + '-registros']||[]).filter(r=>r.id!==id);
+  await saveLog(tabKey + '-registros');
+  renderFaunaRegistros(tabKey);
+}
+
+function buildFaunaRelatorioFormHtml(tabKey){
+  return `
+    <div class="logtable-wrap" style="margin-bottom:16px;">
+      <div class="modal-form-grid" style="margin-bottom:12px;">
+        <div><label>De</label><input type="date" id="faunaRelDe-${tabKey}"></div>
+        <div><label>Até</label><input type="date" id="faunaRelAte-${tabKey}"></div>
+        <div><label>Empreendimento</label><select id="faunaRelEmp-${tabKey}"><option value="">Todos</option></select></div>
+        <div><label>Espécie</label><select id="faunaRelEsp-${tabKey}"><option value="">Todas</option></select></div>
+      </div>
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="gerarRelatorioFauna('${tabKey}')">📊 Gerar relatório</button>
+    </div>
+  `;
+}
+
+function popularFaunaRelatorio(tabKey){
+  const selEmp = document.getElementById('faunaRelEmp-' + tabKey);
+  const selEsp = document.getElementById('faunaRelEsp-' + tabKey);
+  if(!selEmp || !selEsp) return;
+  const emps = (logData[tabKey + '-empreendimentos']||[]).map(e=>e.nome).filter(Boolean);
+  const esps = (logData[tabKey + '-especies']||[]).map(e=>e.nome).filter(Boolean);
+  selEmp.innerHTML = '<option value="">Todos</option>' + emps.map(n=>`<option value="${n}">${n}</option>`).join('');
+  selEsp.innerHTML = '<option value="">Todas</option>' + esps.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+
+function gerarRelatorioFauna(tabKey){
+  const de = document.getElementById('faunaRelDe-' + tabKey).value;
+  const ate = document.getElementById('faunaRelAte-' + tabKey).value;
+  const emp = document.getElementById('faunaRelEmp-' + tabKey).value;
+  const esp = document.getElementById('faunaRelEsp-' + tabKey).value;
+  const resultEl = document.getElementById('faunaRelatorioResultado-' + tabKey);
+
+  const registros = (logData[tabKey + '-registros']||[]).filter(r => {
+    if(!r.data) return false;
+    const d = r.data.split('T')[0];
+    if(de && d < de) return false;
+    if(ate && d > ate) return false;
+    if(emp && (r.local||r.empreendimento||'') !== emp) return false;
+    if(esp && r.especie !== esp) return false;
+    return true;
+  }).sort((a,b)=>new Date(a.data)-new Date(b.data));
+
+  if(registros.length === 0){
+    resultEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum registro encontrado.</p>';
+    return;
+  }
+
+  // Totais por método
+  const totMetodo = {};
+  FAUNA_METODOS.forEach(m=>{ totMetodo[m]=0; });
+  let totalGeral = 0;
+  registros.forEach(r => {
+    FAUNA_METODOS.forEach(m => {
+      const v = parseInt(r[m])||0;
+      totMetodo[m] += v;
+      totalGeral += v;
+    });
+  });
+
+  // Totais por espécie
+  const totEspecie = {};
+  registros.forEach(r=>{
+    const k = r.especie||'Não identificada';
+    totEspecie[k] = (totEspecie[k]||0) + FAUNA_METODOS.reduce((a,m)=>a+(parseInt(r[m])||0),0);
+  });
+  const espSorted = Object.entries(totEspecie).sort((a,b)=>b[1]-a[1]);
+  const maxEsp = Math.max(1, ...espSorted.map(e=>e[1]));
+  const espBarsHtml = espSorted.map(([n,c])=>`
+    <div style="margin-bottom:7px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;"><span>${n}</span><span style="font-weight:700;">${c}</span></div>
+      <div class="indic-progress-track"><div class="indic-progress-fill" style="width:${Math.round(c/maxEsp*100)}%;background:var(--steel);"></div></div>
+    </div>`).join('');
+
+  // Totais por empreendimento
+  const totEmp = {};
+  registros.forEach(r=>{
+    const k = r.local||r.empreendimento||'—';
+    totEmp[k] = (totEmp[k]||0) + FAUNA_METODOS.reduce((a,m)=>a+(parseInt(r[m])||0),0);
+  });
+  const empSorted = Object.entries(totEmp).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const maxEmpV = Math.max(1, ...empSorted.map(e=>e[1]));
+  const empBarsHtml = empSorted.map(([n,c])=>`
+    <div style="margin-bottom:7px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;"><span>${n}</span><span style="font-weight:700;">${c}</span></div>
+      <div class="indic-progress-track"><div class="indic-progress-fill" style="width:${Math.round(c/maxEmpV*100)}%;background:var(--sage);"></div></div>
+    </div>`).join('');
+
+  const metodosStatsHtml = FAUNA_METODOS.map(m=>`
+    <div class="stat s-exec" style="min-width:100px;">
+      <div class="num" style="font-size:22px;">${totMetodo[m]}</div>
+      <div class="lbl">${FAUNA_METODO_LABELS[m]}</div>
+    </div>`).join('');
+
+  resultEl.innerHTML = `
+    <div class="report-print-area">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2 style="margin:0;">Relatório de Controle de Fauna</h2>
+          <p style="color:var(--ink-soft);font-size:12.5px;margin:4px 0 0;">
+            ${emp||'Todos os empreendimentos'} · ${esp||'Todas as espécies'} · ${de||'(início)'} a ${ate||'(fim)'}
+          </p>
+        </div>
+        <button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      </div>
+      <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:16px;">
+        <div class="stat total"><div class="num">${registros.length}</div><div class="lbl">Visitas</div></div>
+        <div class="stat s-plan"><div class="num">${totalGeral}</div><div class="lbl">Total animais</div></div>
+        <div class="stat s-exec"><div class="num">${Object.keys(totEspecie).length}</div><div class="lbl">Espécies</div></div>
+        <div class="stat total" style="background:var(--sage);color:#fff;"><div class="num">${Object.keys(totEmp).length}</div><div class="lbl">Empreendimentos</div></div>
+      </div>
+      <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:16px;">
+        ${metodosStatsHtml}
+      </div>
+      <div class="logtable-wrap" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por espécie</div>
+        ${espBarsHtml}
+      </div>
+      <div class="logtable-wrap" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por empreendimento (top 15)</div>
+        ${empBarsHtml}
+      </div>
+    </div>
+  `;
+}
 
 function mountDiarioTab(tabDef){
   if(document.getElementById('view-' + tabDef.key)) return;
@@ -2815,7 +3136,8 @@ async function deleteDiarioRegistro(tabKey, id){
   renderDiarioRegistros(tabKey);
 }
 
-function buildRelatorioFormHtml(tabKey){
+function buildRelatorioFormHtml(tabKey, generatorFn){
+  generatorFn = generatorFn || 'gerarRelatorioDiario';
   return `
     <div class="logtable-wrap" style="margin-bottom:16px;">
       <div class="modal-form-grid" style="margin-bottom:12px;">
@@ -2823,7 +3145,7 @@ function buildRelatorioFormHtml(tabKey){
         <div><label>Até</label><input type="date" id="relatorioAte-${tabKey}"></div>
         <div class="full"><label>Empreendimento</label><select id="relatorioEmp-${tabKey}"><option value="">Todos</option></select></div>
       </div>
-      <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="gerarRelatorioDiario('${tabKey}')">📊 Gerar relatório</button>
+      <button class="btn login-btn" style="width:auto;padding:9px 18px;" onclick="${generatorFn}('${tabKey}')">📊 Gerar relatório</button>
     </div>
   `;
 }
@@ -3088,12 +3410,13 @@ async function deleteCustomTab(tabKey, label){
   delete LOG_CONFIGS[tabKey];
   delete logData[tabKey];
   delete activityBoardFilters[tabKey];
-  ['itens','entrada','saida','registros','empreendimentos','embasamentos'].forEach(suf => {
+  ['itens','entrada','saida','registros','empreendimentos','embasamentos','especies'].forEach(suf => {
     delete LOG_CONFIGS[tabKey + '-' + suf];
     delete logData[tabKey + '-' + suf];
   });
   stockTabBaseKeys = stockTabBaseKeys.filter(k => k !== tabKey);
   diarioTabBaseKeys = diarioTabBaseKeys.filter(k => k !== tabKey);
+  faunaTabBaseKeys = faunaTabBaseKeys.filter(k => k !== tabKey);
 
   const navBtn = document.getElementById('nav-' + tabKey);
   if(navBtn) navBtn.remove();
@@ -3198,6 +3521,16 @@ async function loadAndMountCustomTabs(){
       renderLogTable(tabDef.key + '-embasamentos');
       renderDiarioRegistros(tabDef.key);
       popularFiltroEmpreendimentoRelatorio(tabDef.key);
+    }else if(tabDef.type === 'fauna'){
+      mountFaunaTab(tabDef);
+      faunaTabBaseKeys.push(tabDef.key);
+      await loadLogData(tabDef.key + '-registros');
+      await loadLogData(tabDef.key + '-empreendimentos');
+      await loadLogData(tabDef.key + '-especies');
+      renderLogTable(tabDef.key + '-empreendimentos');
+      renderLogTable(tabDef.key + '-especies');
+      renderFaunaRegistros(tabDef.key);
+      popularFaunaRelatorio(tabDef.key);
     }else{
       mountCustomTab(tabDef);
       await loadLogData(tabDef.key);
@@ -4331,6 +4664,8 @@ async function bulkLoadInitialData(){
         customKeys.push('log-' + t.key + '-itens', 'log-' + t.key + '-entrada', 'log-' + t.key + '-saida');
       }else if(t.type === 'diario'){
         customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-embasamentos');
+      }else if(t.type === 'fauna'){
+        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-especies');
       }else{
         customKeys.push('log-' + t.key);
       }
@@ -4373,6 +4708,16 @@ async function bulkLoadInitialData(){
         renderLogTable(tabDef.key + '-embasamentos');
         renderDiarioRegistros(tabDef.key);
         popularFiltroEmpreendimentoRelatorio(tabDef.key);
+      }else if(tabDef.type === 'fauna'){
+        mountFaunaTab(tabDef);
+        faunaTabBaseKeys.push(tabDef.key);
+        logData[tabDef.key + '-registros'] = parseEntry(batch2['log-' + tabDef.key + '-registros']);
+        logData[tabDef.key + '-empreendimentos'] = parseEntry(batch2['log-' + tabDef.key + '-empreendimentos']);
+        logData[tabDef.key + '-especies'] = parseEntry(batch2['log-' + tabDef.key + '-especies']);
+        renderLogTable(tabDef.key + '-empreendimentos');
+        renderLogTable(tabDef.key + '-especies');
+        renderFaunaRegistros(tabDef.key);
+        popularFaunaRelatorio(tabDef.key);
       }else{
         const rows = parseEntry(batch2['log-' + tabDef.key]);
         mountCustomTab(tabDef);
