@@ -2340,8 +2340,7 @@ function setStockSearchQuery(tabKey, value){
 }
 
 function mountStockTab(tabDef){
-  if(document.getElementById('view-' + tabDef.key)) return;
-
+  // Sempre registra os LOG_CONFIGS antes de checar se a view já existe.
   LOG_CONFIGS[tabDef.key + '-itens'] = {
     container: 'sub-' + tabDef.key + '-itens',
     cols: [
@@ -2369,6 +2368,8 @@ function mountStockTab(tabDef){
       {key:'destino', label:'Destino / responsável', type:'text'}
     ]
   };
+
+  if(document.getElementById('view-' + tabDef.key)) return;
 
   const nav = document.getElementById('mainnav');
   const addBtn = document.getElementById('nav-add-tab');
@@ -2531,8 +2532,8 @@ const FAUNA_METODO_LABELS = {
 };
 
 function mountFaunaTab(tabDef){
-  if(document.getElementById('view-' + tabDef.key)) return;
-
+  // Sempre registra os LOG_CONFIGS, mesmo se a view já existir no DOM
+  // (acontece quando o dashboard recarrega e a aba já foi montada antes).
   LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
     container: 'sub-' + tabDef.key + '-empreendimentos',
     cols: [{key:'nome', label:'Nome do empreendimento', type:'text'}]
@@ -2541,6 +2542,8 @@ function mountFaunaTab(tabDef){
     container: 'sub-' + tabDef.key + '-especies',
     cols: [{key:'nome', label:'Nome da espécie', type:'text'}]
   };
+
+  if(document.getElementById('view-' + tabDef.key)) return;
 
   const nav = document.getElementById('mainnav');
   const addBtn = document.getElementById('nav-add-tab');
@@ -2824,8 +2827,6 @@ function gerarRelatorioFauna(tabKey){
 }
 
 function mountDiarioTab(tabDef){
-  if(document.getElementById('view-' + tabDef.key)) return;
-
   LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
     container: 'sub-' + tabDef.key + '-empreendimentos',
     cols: [
@@ -2839,6 +2840,8 @@ function mountDiarioTab(tabDef){
       {key:'texto', label:'Texto do embasamento', type:'textarea'}
     ]
   };
+
+  if(document.getElementById('view-' + tabDef.key)) return;
 
   const nav = document.getElementById('mainnav');
   const addBtn = document.getElementById('nav-add-tab');
