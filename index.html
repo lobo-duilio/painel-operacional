@@ -2826,6 +2826,8 @@ function gerarRelatorioFauna(tabKey){
   `;
 }
 
+let diarioTabBaseKeys = [];
+
 function mountDiarioTab(tabDef){
   LOG_CONFIGS[tabDef.key + '-empreendimentos'] = {
     container: 'sub-' + tabDef.key + '-empreendimentos',
