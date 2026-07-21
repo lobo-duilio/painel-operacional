@@ -2277,8 +2277,11 @@ async function submitNewTab(){
     faunaTabBaseKeys.push(key);
     logData[key + '-registros'] = [];
     logData[key + '-empreendimentos'] = [];
+    logData[key + '-especies'] = [];
     renderLogTable(key + '-empreendimentos');
-    renderLogTable(key + '-registros');
+    renderLogTable(key + '-especies');
+    renderFaunaRegistros(key);
+    popularFaunaRelatorio(key);
   }else{
     mountActivityBoard(tabDef);
     logData[key] = [];
@@ -2565,7 +2568,7 @@ function mountFaunaTab(tabDef){
       '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\')">Espécies</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\')" onclick="popularFaunaRelatorio(\'' + tabDef.key + '\')">Relatório</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');popularFaunaRelatorio(\'' + tabDef.key + '\')">Relatório</button>' +
     '</div>' +
     '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
