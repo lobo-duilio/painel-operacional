@@ -4436,6 +4436,7 @@ function deleteLogRow(key, id){
     alert(LOG_CONFIGS[key] && LOG_CONFIGS[key].adminOnly ? "Somente administradores podem remover itens desta lista." : "Você não tem permissão para excluir registros nesta aba.");
     return;
   }
+  if(!confirm('Remover este item? Essa ação não pode ser desfeita.')) return;
   logData[key] = logData[key].filter(r=>r.id!==id);
   saveLog(key);
   renderLogTable(key);
