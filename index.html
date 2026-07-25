@@ -1080,7 +1080,6 @@
           <option value="stock">Controle de estoque (itens, entrada, saída — como Roedores)</option>
           <option value="diario">Registro diário com fotos (por empreendimento)</option>
           <option value="fauna">Controle de fauna sinantrópica (espécie + métodos)</option>
-          <option value="fauna">Controle de fauna (espécie + métodos)</option>
           <option value="embed">Formulário ou link incorporado</option>
         </select>
       </div>
@@ -4291,14 +4290,6 @@ async function saveLog(key){
   }catch(e){
     console.error('Erro ao salvar', key, e);
   }
-}
-
-function inputHtml(col, rowId){
-  const idAttr = `data-field="${col.key}" data-row="${rowId}"`;
-  if(col.type === 'textarea'){
-    return `<textarea ${idAttr} onchange="editLogCell(this)"></textarea>`;
-  }
-  return `<input type="${col.type}" ${idAttr} onchange="editLogCell(this)">`;
 }
 
 /** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
