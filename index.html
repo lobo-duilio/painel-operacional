@@ -1192,9 +1192,13 @@
     <div class="subnav">
       <button class="active" onclick="showSub('aves','treinamento')">Treinamento</button>
       <button onclick="showSub('aves','feedback')">Feedbacks</button>
+      <button onclick="showSub('aves','cadastro-aves')">Aves cadastradas</button>
+      <button onclick="showSub('aves','cadastro-responsaveis')">Responsáveis</button>
     </div>
     <div class="subview active" id="sub-aves-treinamento"></div>
     <div class="subview" id="sub-aves-feedback"></div>
+    <div class="subview" id="sub-aves-cadastro-aves"></div>
+    <div class="subview" id="sub-aves-cadastro-responsaveis"></div>
   </div>
 
   <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
@@ -4101,10 +4105,12 @@ const LOG_CONFIGS = {
     container:'sub-aves-treinamento',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'ave_id', label:'Identificação da ave', type:'text'},
-      {key:'peso_inicial', label:'Peso inicial (g)', type:'number'},
-      {key:'peso_final', label:'Peso final (g)', type:'number'},
-      {key:'alimentacao', label:'Alimentação', type:'text'},
+      {key:'hora', label:'Hora', type:'time'},
+      {key:'ave_id', label:'Identificação da ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
+      {key:'responsavel', label:'Responsável', type:'select', sourceKey:'aves-cadastro-responsaveis', sourceField:'nome'},
+      {key:'peso_inicial', label:'Peso do dia (g)', type:'number'},
+      {key:'alimentacao', label:'Alimentação', type:'select', options:['Pombo','Roedor','Nenhum']},
+      {key:'suplementacao', label:'Suplementação', type:'select', options:['Ovo de codorna','VitaHawk','AminoMix','Nenhum']},
       {key:'obs', label:'Observação', type:'text'}
     ]
   },
@@ -4112,9 +4118,24 @@ const LOG_CONFIGS = {
     container:'sub-aves-feedback',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'ave_id', label:'Identificação (opcional)', type:'text'},
-      {key:'responsavel', label:'Responsável', type:'text'},
+      {key:'ave_id', label:'Identificação da ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
+      {key:'responsavel', label:'Responsável', type:'select', sourceKey:'aves-cadastro-responsaveis', sourceField:'nome'},
+      {key:'tipo_treinamento', label:'Tipo de treinamento', type:'select', options:['Vertical','Punho a punho','Voo livre','Chamado ao punho','Capuz','Manejo','Roedeiro']},
       {key:'feedback', label:'Feedback', type:'textarea'}
+    ]
+  },
+  'aves-cadastro-aves': {
+    container:'sub-aves-cadastro-aves',
+    adminOnly:true,
+    cols:[
+      {key:'nome', label:'Nome / identificação da ave', type:'text'}
+    ]
+  },
+  'aves-cadastro-responsaveis': {
+    container:'sub-aves-cadastro-responsaveis',
+    adminOnly:true,
+    cols:[
+      {key:'nome', label:'Nome do responsável', type:'text'}
     ]
   }
 };
@@ -4282,9 +4303,20 @@ function inputHtml(col, rowId){
 
 /** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
 function getSelectOptionsForCol(c){
+  if(c.options) return c.options;
   const rows = logData[c.sourceKey] || [];
   const valores = rows.map(r => r[c.sourceField]).filter(Boolean);
   return Array.from(new Set(valores)).sort();
+}
+
+/** Verdadeiro se o usuario logado pode adicionar/remover itens da lista (tabela) indicada por 'key'.
+ * Listas marcadas com adminOnly (os cadastros de nomes de Aves/Responsaveis) so podem ser
+ * geridas por administradores -- editores da aba so podem SELECIONAR os nomes ja cadastrados,
+ * nao incluir ou remover. As demais tabelas seguem a regra normal (dono da aba pode gerir). */
+function canManageList(key){
+  const cfg = LOG_CONFIGS[key];
+  if(cfg && cfg.adminOnly) return !!(SESSION && SESSION.papel === 'adm');
+  return canManageTab(clientKeyToTabId(key));
 }
 
 function renderLogTable(key){
@@ -4301,7 +4333,8 @@ function renderLogTable(key){
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
 
-  const canDelete = canManageTab(clientKeyToTabId(key));
+  const canManage = canManageList(key);
+  const canDelete = canManage;
 
   const bodyRows = rows.length ? rows.map(row=>{
     const tds = cfg.cols.map(c=>{
@@ -4344,18 +4377,25 @@ function renderLogTable(key){
     return `<td><input type="${c.type}" id="new-${key}-${c.key}" placeholder="${c.label}"></td>`;
   }).join('');
 
+  const addRowHtml = canManage ? `
+          <tr class="addrow">
+            ${addCells}
+            <td><button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="addLogRow('${key}')">Adicionar</button></td>
+          </tr>` : '';
+
+  const adminOnlyNoteHtml = (cfg.adminOnly && !canManage) ? `
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:8px 0 0;">Somente administradores podem adicionar ou remover itens desta lista.</p>` : '';
+
   container.innerHTML = `
     <div class="logtable-wrap">
       <table class="logtable">
         <thead><tr>${headCols}</tr></thead>
         <tbody>
           ${bodyRows}
-          <tr class="addrow">
-            ${addCells}
-            <td><button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="addLogRow('${key}')">Adicionar</button></td>
-          </tr>
+          ${addRowHtml}
         </tbody>
       </table>
+      ${adminOnlyNoteHtml}
     </div>
   `;
   }catch(err){
@@ -4367,6 +4407,10 @@ function renderLogTable(key){
 
 function addLogRow(key){
   const cfg = LOG_CONFIGS[key];
+  if(!canManageList(key)){
+    alert("Somente administradores podem adicionar itens a esta lista.");
+    return;
+  }
   const newRow = {id: Date.now()};
   let hasValue = false;
   cfg.cols.forEach(c=>{
@@ -4397,8 +4441,8 @@ function updateLogRow(key, id, field, value){
 }
 
 function deleteLogRow(key, id){
-  if(!canManageTab(clientKeyToTabId(key))){
-    alert("Você não tem permissão para excluir registros nesta aba.");
+  if(!canManageList(key)){
+    alert(LOG_CONFIGS[key] && LOG_CONFIGS[key].adminOnly ? "Somente administradores podem remover itens desta lista." : "Você não tem permissão para excluir registros nesta aba.");
     return;
   }
   logData[key] = logData[key].filter(r=>r.id!==id);
@@ -4646,8 +4690,7 @@ function renderAvesWeightChart(){
        </div>`
     : (() => {
         const series = [
-          { label:'Peso inicial (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) },
-          { label:'Peso final (g)', color:'#3E8760', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_final)||0, tick:r.data })) }
+          { label:'Peso do dia (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) }
         ];
         const svg = buildLineChartSVG(series);
         return `
@@ -4655,8 +4698,7 @@ function renderAvesWeightChart(){
             <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução de peso por sessão de treinamento</div>
             ${svg}
             <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft);">
-              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>Peso inicial</span>
-              <span><span style="display:inline-block;width:10px;height:10px;background:#3E8760;border-radius:2px;margin-right:5px;"></span>Peso final</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>Peso do dia</span>
             </div>
           </div>
         `;
