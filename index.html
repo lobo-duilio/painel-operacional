@@ -775,6 +775,20 @@
     .login-field input, table.logtable input, table.logtable textarea, table.logtable select{
       font-size:16px; /* impede o iOS Safari de dar zoom ao focar o campo */
     }
+    /* Area de toque maior pra dedo -- botao "Remover" das tabelas e checkboxes
+       de embasamento tinham alvo de toque menor que o minimo recomendado (44px). */
+    .rowdel{
+      padding:10px 12px;
+      min-height:44px;
+      min-width:44px;
+    }
+    .embasamento-item input, .checklist-item-long input{
+      width:20px;
+      height:20px;
+    }
+    table.logtable td:last-child{
+      white-space:nowrap;
+    }
   }
 
   /* Proteção geral: nunca deixa a PÁGINA inteira rolar de lado — só
@@ -2765,6 +2779,22 @@ function popularFaunaRelatorio(tabKey){
   selEsp.innerHTML = '<option value="">Todas</option>' + esps.map(n=>`<option value="${n}">${n}</option>`).join('');
 }
 
+async function gerarRelatorioFaunaDoc(tabKey, params){
+  const btn = document.getElementById('btnGerarDocFauna-' + tabKey);
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '✨ Gerando (pode levar ~10s)…';
+  try {
+    const json = await userApiCall('gerarRelatorioFaunaDoc', { tabKey: tabKey, params: params });
+    window.open(json.url, '_blank');
+  } catch(e){
+    alert('Não foi possível gerar o relatório: ' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
 function gerarRelatorioFauna(tabKey){
   const de = document.getElementById('faunaRelDe-' + tabKey).value;
   const ate = document.getElementById('faunaRelAte-' + tabKey).value;
@@ -2843,6 +2873,7 @@ function gerarRelatorioFauna(tabKey){
           </p>
         </div>
         <button class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="window.print()">🖨️ Imprimir / PDF</button>
+        <button class="btn" id="btnGerarDocFauna-${tabKey}" style="background:linear-gradient(135deg, #6D5BD0, #2E6DA4);color:#fff;border:none;" onclick='gerarRelatorioFaunaDoc(${JSON.stringify(tabKey)}, ${JSON.stringify({empreendimento:emp||null, especie:esp||null, periodoDe:de||null, periodoAte:ate||null, totalGeral:totalGeral, totMetodo:totMetodo})})'>✨ Gerar relatório (Google Docs)</button>
       </div>
       <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:16px;">
         <div class="stat total"><div class="num">${registros.length}</div><div class="lbl">Visitas</div></div>
