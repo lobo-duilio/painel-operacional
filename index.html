@@ -2598,6 +2598,7 @@ function mountFaunaTab(tabDef){
       '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\')">Espécies</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');popularFaunaRelatorio(\'' + tabDef.key + '\')">Relatório</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'historico-relatorios\');renderFaunaHistorico(\'' + tabDef.key + '\')">Histórico de relatórios</button>' +
     '</div>' +
     '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
@@ -2605,7 +2606,8 @@ function mountFaunaTab(tabDef){
     '<div class="subview" id="sub-' + tabDef.key + '-relatorio">' +
       buildFaunaRelatorioFormHtml(tabDef.key) +
       '<div id="faunaRelatorioResultado-' + tabDef.key + '"></div>' +
-    '</div>';
+    '</div>' +
+    '<div class="subview" id="sub-' + tabDef.key + '-historico-relatorios"></div>';
   wrap.appendChild(view);
 }
 
@@ -2787,12 +2789,68 @@ async function gerarRelatorioFaunaDoc(tabKey, params){
   try {
     const json = await userApiCall('gerarRelatorioFaunaDoc', { tabKey: tabKey, params: params });
     window.open(json.url, '_blank');
+    // Atualiza a lista de histórico na hora, sem precisar recarregar a página.
+    logData[tabKey + '-historico-relatorios'] = logData[tabKey + '-historico-relatorios'] || [];
+    logData[tabKey + '-historico-relatorios'].push({
+      id: Date.now(),
+      dataGeracao: new Date().toISOString(),
+      empreendimento: params.empreendimento || '',
+      especie: params.especie || '',
+      periodoDe: params.periodoDe || '',
+      periodoAte: params.periodoAte || '',
+      totalGeral: params.totalGeral,
+      url: json.url
+    });
+    renderFaunaHistorico(tabKey);
   } catch(e){
     alert('Não foi possível gerar o relatório: ' + (e.message || e));
   } finally {
     btn.disabled = false;
     btn.textContent = textoOriginal;
   }
+}
+
+/** Lista somente-leitura dos relatórios já gerados por IA nesta aba de fauna,
+  * com link direto pra reabrir cada Google Doc depois. Cada geração bem
+  * sucedida entra aqui automaticamente (gravado pelo backend). */
+function renderFaunaHistorico(tabKey){
+  const container = document.getElementById('sub-' + tabKey + '-historico-relatorios');
+  if(!container) return;
+
+  const historico = (logData[tabKey + '-historico-relatorios'] || []).slice()
+    .sort((a,b) => new Date(b.dataGeracao || 0) - new Date(a.dataGeracao || 0));
+
+  if(historico.length === 0){
+    container.innerHTML = `
+      <div class="logtable-wrap">
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum relatório gerado ainda. Use o botão "✨ Gerar relatório (Google Docs)" na aba Relatório — cada relatório gerado fica registrado aqui automaticamente, com um link direto pra reabrir depois.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const rowsHtml = historico.map(r => {
+    const dataFmt = r.dataGeracao ? new Date(r.dataGeracao).toLocaleString('pt-BR') : '—';
+    const periodo = (r.periodoDe || r.periodoAte) ? ((r.periodoDe || '—') + ' a ' + (r.periodoAte || '—')) : '—';
+    const totalFmt = (r.totalGeral !== undefined && r.totalGeral !== null && r.totalGeral !== '') ? r.totalGeral : '—';
+    return `<tr>
+      <td>${dataFmt}</td>
+      <td>${r.empreendimento || '—'}</td>
+      <td>${r.especie || '—'}</td>
+      <td>${periodo}</td>
+      <td>${totalFmt}</td>
+      <td><a href="${r.url}" target="_blank" rel="noopener" class="btn small" style="text-decoration:none;background:var(--navy);color:#fff;border-color:var(--navy);white-space:nowrap;">Abrir</a></td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap">
+      <table class="logtable">
+        <thead><tr><th>Gerado em</th><th>Empreendimento</th><th>Espécie</th><th>Período</th><th>Total</th><th></th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function gerarRelatorioFauna(tabKey){
@@ -4204,7 +4262,7 @@ function rowHasNaoConforme(row){
 function hasReportedProblem(val){
   const norm = normalizeHeader(val);
   if(!norm) return false;
-  const semProblema = ['nenhum','nenhuma','nenhum problema','sem problemas','sem problema','n/a','na','-','ok','tudo em ordem','tudo ok'];
+  const semProblema = ['nao','nao.','nenhum','nenhuma','nenhum problema','sem problemas','sem problema','n/a','na','-','ok','tudo em ordem','tudo ok'];
   return semProblema.indexOf(norm) === -1;
 }
 
@@ -4805,7 +4863,7 @@ async function bulkLoadInitialData(){
       }else if(t.type === 'diario'){
         customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-embasamentos');
       }else if(t.type === 'fauna'){
-        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-especies');
+        customKeys.push('log-' + t.key + '-registros', 'log-' + t.key + '-empreendimentos', 'log-' + t.key + '-especies', 'log-' + t.key + '-historico-relatorios');
       }else{
         customKeys.push('log-' + t.key);
       }
@@ -4855,10 +4913,12 @@ async function bulkLoadInitialData(){
         logData[tabDef.key + '-registros'] = parseEntry(batch2['log-' + tabDef.key + '-registros']);
         logData[tabDef.key + '-empreendimentos'] = parseEntry(batch2['log-' + tabDef.key + '-empreendimentos']);
         logData[tabDef.key + '-especies'] = parseEntry(batch2['log-' + tabDef.key + '-especies']);
+        logData[tabDef.key + '-historico-relatorios'] = parseEntry(batch2['log-' + tabDef.key + '-historico-relatorios']);
         renderLogTable(tabDef.key + '-empreendimentos');
         renderLogTable(tabDef.key + '-especies');
         renderFaunaRegistros(tabDef.key);
         popularFaunaRelatorio(tabDef.key);
+        renderFaunaHistorico(tabDef.key);
       }else{
         const rows = parseEntry(batch2['log-' + tabDef.key]);
         mountCustomTab(tabDef);
