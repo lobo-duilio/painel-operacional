@@ -2829,17 +2829,21 @@ function renderFaunaHistorico(tabKey){
     return;
   }
 
+  const canManage = canManageTab(tabKey);
   const rowsHtml = historico.map(r => {
     const dataFmt = r.dataGeracao ? new Date(r.dataGeracao).toLocaleString('pt-BR') : '—';
     const periodo = (r.periodoDe || r.periodoAte) ? ((r.periodoDe || '—') + ' a ' + (r.periodoAte || '—')) : '—';
     const totalFmt = (r.totalGeral !== undefined && r.totalGeral !== null && r.totalGeral !== '') ? r.totalGeral : '—';
+    const excluirBtn = canManage
+      ? `<button class="rowdel" style="margin-left:6px;" onclick="excluirRelatorioHistorico('${tabKey}',${r.id})">Excluir</button>`
+      : '';
     return `<tr>
       <td>${dataFmt}</td>
       <td>${r.empreendimento || '—'}</td>
       <td>${r.especie || '—'}</td>
       <td>${periodo}</td>
       <td>${totalFmt}</td>
-      <td><a href="${r.url}" target="_blank" rel="noopener" class="btn small" style="text-decoration:none;background:var(--navy);color:#fff;border-color:var(--navy);white-space:nowrap;">Abrir</a></td>
+      <td style="white-space:nowrap;"><a href="${r.url}" target="_blank" rel="noopener" class="btn small" style="text-decoration:none;background:var(--navy);color:#fff;border-color:var(--navy);">Abrir</a>${excluirBtn}</td>
     </tr>`;
   }).join('');
 
@@ -2851,6 +2855,21 @@ function renderFaunaHistorico(tabKey){
       </table>
     </div>
   `;
+}
+
+/** Remove um relatório da lista de histórico (não apaga o Google Doc em si,
+  * só o registro/link nesta lista). Mesma permissão de quem gerencia a aba. */
+async function excluirRelatorioHistorico(tabKey, id){
+  if(!canManageTab(tabKey)){
+    alert("Você não tem permissão para excluir itens desta lista.");
+    return;
+  }
+  if(!confirm('Remover este relatório do histórico? O Google Doc em si não é apagado, só o link some daqui. Essa ação não pode ser desfeita.')) return;
+
+  const key = tabKey + '-historico-relatorios';
+  logData[key] = (logData[key] || []).filter(r => r.id !== id);
+  await saveLog(key);
+  renderFaunaHistorico(tabKey);
 }
 
 function gerarRelatorioFauna(tabKey){
