@@ -2917,8 +2917,8 @@ function gerarRelatorioFauna(tabKey){
     const d = r.data.split('T')[0];
     if(de && d < de) return false;
     if(ate && d > ate) return false;
-    if(emp && (r.local||r.empreendimento||'') !== emp) return false;
-    if(esp && r.especie !== esp) return false;
+    if(emp && (r.local||r.empreendimento||'').trim().toLowerCase() !== emp.trim().toLowerCase()) return false;
+    if(esp && (r.especie||'').trim().toLowerCase() !== esp.trim().toLowerCase()) return false;
     return true;
   }).sort((a,b)=>new Date(a.data)-new Date(b.data));
 
