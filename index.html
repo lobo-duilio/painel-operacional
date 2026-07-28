@@ -2589,16 +2589,17 @@ function mountFaunaTab(tabDef){
   const view = document.createElement('div');
   view.className = 'view';
   view.id = 'view-' + tabDef.key;
+  const refreshBtn = '<button class="btn" id="btnAtualizarFauna-' + tabDef.key + '" onclick="refreshFaunaData(\'' + tabDef.key + '\')" title="Busca a versão mais recente da planilha, sem precisar recarregar a página">🔄 Atualizar dados</button>';
   view.innerHTML =
     '<div class="module-header"><div><h2>' + tabDef.label + '</h2>' +
     '<p>Controle de fauna sinantrópica nociva — registros de campo</p></div>' +
-    '<div style="display:flex;gap:8px;">' + formLinkBtn + deleteTabBtn + '</div></div>' +
+    '<div style="display:flex;gap:8px;">' + refreshBtn + formLinkBtn + deleteTabBtn + '</div></div>' +
     '<div class="subnav">' +
-      '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\')">Registros</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\')">Empreendimentos</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\')">Espécies</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');popularFaunaRelatorio(\'' + tabDef.key + '\')">Relatório</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'historico-relatorios\');renderFaunaHistorico(\'' + tabDef.key + '\')">Histórico de relatórios</button>' +
+      '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\');refreshFaunaData(\'' + tabDef.key + '\')">Registros</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\');refreshFaunaData(\'' + tabDef.key + '\')">Empreendimentos</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\');refreshFaunaData(\'' + tabDef.key + '\')">Espécies</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');(async()=>{await refreshFaunaData(\'' + tabDef.key + '\');popularFaunaRelatorio(\'' + tabDef.key + '\');})()">Relatório</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'historico-relatorios\');refreshFaunaData(\'' + tabDef.key + '\')">Histórico de relatórios</button>' +
     '</div>' +
     '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-empreendimentos"></div>' +
@@ -2609,6 +2610,38 @@ function mountFaunaTab(tabDef){
     '</div>' +
     '<div class="subview" id="sub-' + tabDef.key + '-historico-relatorios"></div>';
   wrap.appendChild(view);
+}
+
+/** Busca de novo, na hora, os dados desta aba de fauna direto da planilha
+  * (sem cache do navegador), pra refletir edições feitas manualmente nela
+  * sem precisar recarregar a página inteira. Chamada automaticamente ao
+  * trocar de sub-aba, e também disponível pelo botão "Atualizar dados". */
+async function refreshFaunaData(tabKey){
+  const btn = document.getElementById('btnAtualizarFauna-' + tabKey);
+  const textoOriginal = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = '🔄 Atualizando…'; }
+  try {
+    const keys = [
+      'log-' + tabKey + '-registros',
+      'log-' + tabKey + '-empreendimentos',
+      'log-' + tabKey + '-especies',
+      'log-' + tabKey + '-historico-relatorios'
+    ];
+    const batch = await storageGetBatch(keys);
+    const parseEntry = (entry) => (entry && entry.value) ? (function(){ try{ return JSON.parse(entry.value); }catch(e){ return []; } })() : [];
+    logData[tabKey + '-registros'] = parseEntry(batch['log-' + tabKey + '-registros']);
+    logData[tabKey + '-empreendimentos'] = parseEntry(batch['log-' + tabKey + '-empreendimentos']);
+    logData[tabKey + '-especies'] = parseEntry(batch['log-' + tabKey + '-especies']);
+    logData[tabKey + '-historico-relatorios'] = parseEntry(batch['log-' + tabKey + '-historico-relatorios']);
+    renderFaunaRegistros(tabKey);
+    renderLogTable(tabKey + '-empreendimentos');
+    renderLogTable(tabKey + '-especies');
+    renderFaunaHistorico(tabKey);
+  } catch(e) {
+    alert('Não foi possível atualizar os dados: ' + (e.message || e));
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = textoOriginal; }
+  }
 }
 
 function renderFaunaRegistros(tabKey){
