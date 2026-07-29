@@ -1596,16 +1596,24 @@ async function doLogout(){
 
 async function userApiCall(action, extra){
   const body = Object.assign({ action: action, token: SESSION ? SESSION.token : '' }, extra || {});
-  let res, json;
+  let res, textoResposta, json;
   try{
     res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
     });
-    json = await res.json();
+    textoResposta = await res.text();
   }catch(e){
-    throw new Error('Erro de conexão: ' + (e.message || e));
+    throw new Error('Não foi possível conectar ao servidor. Verifique sua internet e tente de novo.');
+  }
+  try{
+    json = JSON.parse(textoResposta);
+  }catch(e){
+    // O servidor respondeu, mas não com JSON -- normalmente sinal de que a
+    // operação demorou demais (ex.: IA sobrecarregada) e o Google devolveu
+    // uma página de erro/tempo esgotado em HTML no lugar da resposta.
+    throw new Error('O servidor demorou demais para responder (geralmente por sobrecarga temporária). Tente novamente em alguns instantes.');
   }
   if(json.error === 'unauthenticated'){
     handleSessionExpired();
