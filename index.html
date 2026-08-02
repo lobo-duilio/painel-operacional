@@ -5142,9 +5142,18 @@ async function loadAuditoria(){
       mudarColaboradorAuditoria();
       return;
     }
-    // NOT_FOUND (primeira vez que a chave é usada, ainda não existe na planilha)
-    // ou instabilidade de conexão: trata como histórico vazio.
-    auditoriaRegistros = [];
+    if(msg === 'NOT_FOUND'){
+      // Primeira vez que a chave é usada, ainda não existe na planilha — vazio é o esperado.
+      auditoriaRegistros = [];
+    }else{
+      // Erro de verdade (instabilidade de conexão, chave não reconhecida no
+      // backend etc.) — não finge que está vazio, mostra o problema.
+      auditoriaRegistros = [];
+      mudarColaboradorAuditoria();
+      const cardsEl = document.getElementById('auditHistoricoCards');
+      if(cardsEl) cardsEl.innerHTML = '<p style="font-size:12.5px;color:var(--red);">Não foi possível carregar o histórico agora (' + msg.replace('CONN_ERROR: ', '') + ').</p>';
+      return;
+    }
   }
   mudarColaboradorAuditoria();
   renderAuditoriaHistorico();
@@ -5226,7 +5235,7 @@ async function salvarAuditoria(){
     colaborador: colaborador,
     cargo: dados.cargo,
     data: dataAuditoria,
-    itens: itens,
+    itens: JSON.stringify(itens), // string, não array: cada registro vira 1 linha/1 célula por campo na planilha
     total: total,
     maxTotal: maxTotal,
     percent: percent,
@@ -5283,7 +5292,9 @@ function renderAuditoriaHistorico(){
   const filtrados = auditoriaRegistros.filter(r => auditoriaHistFiltro === 'Todos' || r.colaborador === auditoriaHistFiltro);
 
   cardsEl.innerHTML = filtrados.slice().reverse().map(r => {
-    const compactHtml = r.itens.map(i => {
+    let itensArr = [];
+    try{ itensArr = typeof r.itens === 'string' ? JSON.parse(r.itens) : (r.itens || []); }catch(e){ itensArr = []; }
+    const compactHtml = itensArr.map(i => {
       const bad = i.nota < 10;
       return `<div class="checklist-item ${bad ? 'bad' : ''}"><span>${escapeHtml(i.item)}</span><span class="checklist-item-val">${i.nota}</span></div>`;
     }).join('');
