@@ -535,10 +535,9 @@
   }
   .card-top{
     display:flex;
-    flex-wrap:wrap;
     justify-content:space-between;
     align-items:flex-start;
-    gap:10px 16px;
+    gap:16px;
     margin-bottom:14px;
   }
   .card-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
@@ -1148,7 +1147,7 @@
 
   <div class="mainnav" id="mainnav">
     <button id="nav-operacional-group" class="active" onclick="showView('geral')">Operacional</button>
-    <button id="nav-coordenacao-group" onclick="showView('coordenacao')">Checklist Veicular</button>
+    <button id="nav-coordenacao-group" onclick="showView('coordenacao')">Operacional II (Coordenação)</button>
     <button id="nav-add-tab" onclick="openNewTabModal()">+ Nova aba</button>
   </div>
 
@@ -1157,6 +1156,7 @@
     <button id="opsub-geral" class="active" onclick="showView('geral')">Atividades</button>
     <button id="opsub-roedores" onclick="showView('roedores')">Criação de roedores</button>
     <button id="opsub-aves" onclick="showView('aves')">Treinamento de aves</button>
+    <button id="opsub-auditoria" onclick="showView('auditoria')">Auditoria</button>
   </div>
 
   <!-- VIEW: PAINEL GERAL (Atividades) -->
@@ -1218,11 +1218,69 @@
     <div class="subview" id="sub-aves-cadastro-responsaveis"></div>
   </div>
 
+  <!-- VIEW: AUDITORIA (MATRIZ DE ATRIBUIÇÕES) -->
+  <div class="view" id="view-auditoria">
+    <div class="module-header">
+      <div>
+        <h2>Auditoria por matriz de atribuições</h2>
+        <p>Checklist de aderência às atribuições de cada colaborador</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('auditoria','nova')">Nova auditoria</button>
+      <button onclick="showSub('auditoria','historico')">Histórico</button>
+    </div>
+
+    <div class="subview active" id="sub-auditoria-nova">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="modal-form-grid">
+          <div>
+            <label>Colaborador avaliado</label>
+            <select id="auditColaborador" onchange="mudarColaboradorAuditoria()">
+              <option value="Duílio">Duílio Francisco Lôbo (Gerência Operacional)</option>
+              <option value="Raian">Raian (Coordenação Operacional)</option>
+              <option value="Tainan">Tainan (Coordenação Analista)</option>
+              <option value="Juliana">Juliana (Equipe Técnica)</option>
+              <option value="Matheus">Matheus (Equipe Técnica)</option>
+              <option value="Larissa">Larissa (Equipe Técnica)</option>
+              <option value="Rafael">Rafael (Equipe Técnica)</option>
+              <option value="Felipe">Felipe (Equipe Técnica)</option>
+            </select>
+          </div>
+          <div>
+            <label>Data da auditoria</label>
+            <input type="date" id="auditData">
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;">Cargo: <strong id="auditCargoLabel">—</strong></div>
+        <div id="auditChecklistContainer"></div>
+      </div>
+
+      <div class="card">
+        <div class="stats" style="grid-template-columns:repeat(2,1fr);max-width:420px;margin-bottom:14px;">
+          <div class="stat total"><div class="num" id="auditValTotal">0 / 0</div><div class="lbl">Pontuação</div></div>
+          <div class="stat s-concl"><div class="num" id="auditValPercent">0%</div><div class="lbl">Aderência</div></div>
+        </div>
+        <div class="indic-progress-track"><div class="indic-progress-fill" id="auditProgressFill" style="width:0%;background:var(--steel);"></div></div>
+        <button class="btn" style="margin-top:16px;" id="auditSalvarBtn" onclick="salvarAuditoria()">Salvar auditoria</button>
+        <div id="auditSalvarMsg" style="font-size:12px;color:var(--ink-soft);margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-auditoria-historico">
+      <div class="stats" id="auditHistoricoStats" style="grid-template-columns:repeat(3,1fr);max-width:620px;margin-bottom:16px;"></div>
+      <div class="filters-row">
+        <div class="filters" id="auditHistoricoFiltro"></div>
+      </div>
+      <div class="cards" id="auditHistoricoCards"></div>
+    </div>
+  </div>
+
   <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
   <div class="view" id="view-coordenacao">
     <div class="module-header">
       <div>
-        <h2>Checklist Veicular</h2>
+        <h2>Operacional II (Coordenação)</h2>
         <p>Checklist veicular — resultados</p>
       </div>
       <a class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);text-decoration:none;"
@@ -1476,6 +1534,7 @@ function updateUserInfo(){
 function clientKeyToTabId(key){
   if(key.indexOf('roedores-') === 0) return 'roedores';
   if(key.indexOf('aves-') === 0) return 'aves';
+  if(key.indexOf('auditoria-') === 0) return 'auditoria';
   const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos|especies)$/);
   if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
@@ -4178,7 +4237,7 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
-const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves'];
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','auditoria'];
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4209,6 +4268,10 @@ function showView(name){
       opSubnav.style.display = 'none';
     }
   }
+
+  if(name === 'auditoria' && !auditoriaLoaded){
+    loadAuditoria();
+  }
 }
 
 function showSub(module, name){
@@ -4234,6 +4297,9 @@ function showSub(module, name){
   if(diarioTabBaseKeys.indexOf(module) !== -1){
     if(name === 'registros') renderDiarioRegistros(module);
     else if(name === 'relatorio') popularFiltroEmpreendimentoRelatorio(module);
+  }
+  if(module === 'auditoria' && name === 'historico'){
+    renderAuditoriaHistorico();
   }
 }
 
@@ -4422,7 +4488,7 @@ function renderChecklistResults(){
             </div>
             <div class="card-sub">${metaParts.join(' · ')}</div>
           </div>
-          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" style="background:var(--sage);color:#fff;border-color:var(--sage);font-weight:600;" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
+          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
         </div>
         <div class="checklist-items-grid">${compactHtml.join('')}</div>
         ${longHtml.length ? `<div class="checklist-long-wrap">${longHtml.join('')}</div>` : ''}
@@ -4946,6 +5012,318 @@ function renderAvesWeightChart(){
       })();
 
   container.insertAdjacentHTML('beforeend', chartHtml);
+}
+
+/* ===================== MÓDULO: AUDITORIA POR MATRIZ DE ATRIBUIÇÕES =====================
+   Módulo bespoke (fora do LOG_CONFIGS), no mesmo padrão de 'painel-atividades':
+   uma chave própria no storage genérico ('auditoria-registros'), carregada/salva
+   sob demanda quando a aba é aberta pela primeira vez. Cada registro é UMA sessão
+   de auditoria completa (colaborador + data + todos os itens com nota).
+
+   Acesso: por enquanto restrito a administradores (ver nota na conversa) — a
+   chave 'auditoria-' já está mapeada em clientKeyToTabId() e o id 'auditoria' já
+   está em OPERACIONAL_GROUP_IDS, mas ainda NÃO foi adicionada em getTabOptionsList(),
+   então nenhum editor pode ser designado dono dela — só quem é adm vê o botão. */
+
+const AUDITORIA_MATRIZ = {
+  "Duílio": {
+    cargo: "Gerência Operacional",
+    itens: [
+      "Administrar grupos de Whatsapp do operacional",
+      "Agendamento e mediação de reuniões internas e externas",
+      "Auditoria interna de procedimentos e comunicação com cliente",
+      "Gestão de cursos (Planejar, idealizar, divulgar, executar)",
+      "Planejamento estratégico operacional e metas",
+      "Supervisão, correção, motivação e delegação dos departamentos S1 e S2"
+    ]
+  },
+  "Raian": {
+    cargo: "Coordenação Operacional",
+    itens: [
+      "Brigada de incêndio (Manter como colaborador brigadista)",
+      "Confecção, manutenção, estoque e destinação de armadilhas",
+      "Execução e coordenação de controle e manejo de fauna",
+      "Realização de Diálogos Internos e Diálogos de Segurança (DS)",
+      "Manutenção e garantia de reparo de equipamentos utilizados",
+      "Planejamento de atividades operacionais",
+      "Treinamento de novos colaboradores em controle de fauna",
+      "Supervisão de equipe interna, externa e veterinários/biólogos",
+      "Criação de Roedores (melhoramento genético para aves de rapina)",
+      "Check-list veicular (condições e itens de segurança)",
+      "Compilação de dados de controle e educação ambiental",
+      "Lavagem, manutenção de veículos e logísticas de campo"
+    ]
+  },
+  "Tainan": {
+    cargo: "Coordenação Analista",
+    itens: [
+      "Análise de dimensionamento e solicitação de aves para o plantel",
+      "Elaboração de documentos (relatórios, pareceres, ofícios)",
+      "Elaboração de procedimentos operacionais internos e externos",
+      "Participação em eventos diversos (publicidades, ensaios, palestras)",
+      "Elaboração e execução de plano de manejo para controle de fauna",
+      "Elaboração e solicitação de Boletim de Medição aos clientes",
+      "Acompanhamento e treinamento do plantel (saúde, bem-estar e veterinário)",
+      "Brigada de incêndio (manutenção de colaborador brigadista)",
+      "Gestão de contratos de Manejo de Fauna, custos, faturamento e cliente"
+    ]
+  },
+  "Juliana": {
+    cargo: "Equipe Técnica",
+    itens: [
+      "Brigada de Incêndio (Liderança e ações preventivas e emergenciais)",
+      "Manejo de Roedores (Liderança ativa e contínua)",
+      "Manejo de Aves (Atuação ativa e contínua na avifauna)",
+      "Comunicação técnica e clareza com o fiscal do cliente",
+      "Preenchimento correto das Ordens de Serviço (OS)"
+    ]
+  },
+  "Matheus": {
+    cargo: "Equipe Técnica",
+    itens: [
+      "Manejo de Aves (Atuação ativa e contínua na avifauna)",
+      "Manejo de Roedores (Atuação de suporte sob demanda)",
+      "Execução de Atividades de Controle em campo",
+      "Revisões e Manutenções Veiculares (apoio compartilhado)",
+      "Comunicação técnica com clientes e preenchimento de OS"
+    ]
+  },
+  "Larissa": {
+    cargo: "Equipe Técnica",
+    itens: [
+      "Manejo de Aves (Atuação ativa e contínua na avifauna)",
+      "Manejo de Roedores (Atuação de suporte sob demanda)",
+      "Execução de Atividades de Controle em campo",
+      "Revisões e Manutenções Veiculares (apoio compartilhado)",
+      "Comunicação técnica com clientes e preenchimento de OS"
+    ]
+  },
+  "Rafael": {
+    cargo: "Equipe Técnica",
+    itens: [
+      "Manejo de Aves (Atuação ativa e contínua na avifauna)",
+      "Manejo de Roedores (Atuação de suporte sob demanda)",
+      "Execução de Atividades de Controle em campo",
+      "Revisões e Manutenções Veiculares (apoio compartilhado)",
+      "Comunicação técnica com clientes e preenchimento de OS"
+    ]
+  },
+  "Felipe": {
+    cargo: "Equipe Técnica",
+    itens: [
+      "Manejo de Aves (Atuação ativa e contínua na avifauna)",
+      "Manejo de Roedores (Atuação de suporte sob demanda)",
+      "Execução de Atividades de Controle em campo",
+      "Revisões e Manutenções Veiculares (apoio compartilhado)",
+      "Comunicação técnica com clientes e preenchimento de OS"
+    ]
+  }
+};
+
+let auditoriaLoaded = false;
+let auditoriaRegistros = [];
+let auditoriaHistFiltro = 'Todos';
+
+async function loadAuditoria(){
+  auditoriaLoaded = true;
+  const dataInput = document.getElementById('auditData');
+  if(dataInput && !dataInput.value) dataInput.valueAsDate = new Date();
+
+  try{
+    const res = await storageGet('auditoria-registros');
+    auditoriaRegistros = JSON.parse(res.value);
+  }catch(e){
+    const msg = String(e.message || e);
+    if(msg === 'AUTH_EXPIRED') return;
+    if(msg === 'FORBIDDEN_TAB'){
+      auditoriaRegistros = [];
+      const cardsEl = document.getElementById('auditHistoricoCards');
+      if(cardsEl) cardsEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Você não tem acesso a esta aba.</p>';
+      mudarColaboradorAuditoria();
+      return;
+    }
+    // NOT_FOUND (primeira vez que a chave é usada, ainda não existe na planilha)
+    // ou instabilidade de conexão: trata como histórico vazio.
+    auditoriaRegistros = [];
+  }
+  mudarColaboradorAuditoria();
+  renderAuditoriaHistorico();
+}
+
+function mudarColaboradorAuditoria(){
+  const select = document.getElementById('auditColaborador');
+  if(!select) return;
+  const colaborador = select.value;
+  const dados = AUDITORIA_MATRIZ[colaborador];
+  document.getElementById('auditCargoLabel').textContent = dados.cargo;
+
+  const container = document.getElementById('auditChecklistContainer');
+  container.innerHTML = dados.itens.map((item, index) => `
+    <div class="card" style="padding:12px 14px;margin-bottom:8px;background:#FCFCFA;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">${index + 1}. ${escapeHtml(item)}</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;">
+          <input type="radio" name="audit_item_${index}" value="0" onchange="atualizarDashboardAuditoria()"> 0 · Não conforme
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;">
+          <input type="radio" name="audit_item_${index}" value="5" onchange="atualizarDashboardAuditoria()"> 5 · Parcial
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;">
+          <input type="radio" name="audit_item_${index}" value="10" checked onchange="atualizarDashboardAuditoria()"> 10 · Conforme
+        </label>
+      </div>
+    </div>
+  `).join('');
+
+  atualizarDashboardAuditoria();
+}
+
+function atualizarDashboardAuditoria(){
+  const select = document.getElementById('auditColaborador');
+  if(!select) return;
+  const dados = AUDITORIA_MATRIZ[select.value];
+  let total = 0;
+  const maxTotal = dados.itens.length * 10;
+
+  dados.itens.forEach((_, index) => {
+    const radios = document.getElementsByName('audit_item_' + index);
+    for(const r of radios){ if(r.checked) total += parseInt(r.value); }
+  });
+
+  const percent = maxTotal > 0 ? Math.round((total / maxTotal) * 100) : 0;
+  document.getElementById('auditValTotal').textContent = total + ' / ' + maxTotal;
+  document.getElementById('auditValPercent').textContent = percent + '%';
+  const fill = document.getElementById('auditProgressFill');
+  fill.style.width = percent + '%';
+  fill.style.background = percent >= 80 ? 'var(--sage)' : (percent >= 50 ? 'var(--amber)' : 'var(--red)');
+}
+
+async function salvarAuditoria(){
+  if(!canManageTab('auditoria')){
+    alert('Você não tem permissão para salvar auditorias.');
+    return;
+  }
+  const colaborador = document.getElementById('auditColaborador').value;
+  const dados = AUDITORIA_MATRIZ[colaborador];
+  const dataAuditoria = document.getElementById('auditData').value;
+  if(!dataAuditoria){
+    alert('Selecione a data da auditoria.');
+    return;
+  }
+
+  const itens = dados.itens.map((item, index) => {
+    const radios = document.getElementsByName('audit_item_' + index);
+    let nota = 10;
+    for(const r of radios){ if(r.checked) nota = parseInt(r.value); }
+    return { item: item, nota: nota };
+  });
+  const total = itens.reduce((s, i) => s + i.nota, 0);
+  const maxTotal = itens.length * 10;
+  const percent = maxTotal > 0 ? Math.round((total / maxTotal) * 100) : 0;
+
+  const registro = {
+    id: 'aud_' + Date.now(),
+    colaborador: colaborador,
+    cargo: dados.cargo,
+    data: dataAuditoria,
+    itens: itens,
+    total: total,
+    maxTotal: maxTotal,
+    percent: percent,
+    avaliador: (SESSION && SESSION.nome) ? SESSION.nome : '',
+    criadoEm: new Date().toISOString()
+  };
+
+  const btn = document.getElementById('auditSalvarBtn');
+  const msgEl = document.getElementById('auditSalvarMsg');
+  btn.disabled = true;
+  msgEl.textContent = 'Salvando…';
+
+  auditoriaRegistros.push(registro);
+  try{
+    await storageSet('auditoria-registros', JSON.stringify(auditoriaRegistros));
+    msgEl.textContent = 'Auditoria salva em ' + new Date().toLocaleString('pt-BR') + '.';
+    renderAuditoriaHistorico();
+  }catch(e){
+    auditoriaRegistros.pop();
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    msgEl.textContent = 'Erro ao salvar: ' + (e.message || e);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+function renderAuditoriaHistorico(){
+  const statsEl = document.getElementById('auditHistoricoStats');
+  const cardsEl = document.getElementById('auditHistoricoCards');
+  const filtroEl = document.getElementById('auditHistoricoFiltro');
+  if(!statsEl || !cardsEl || !filtroEl) return;
+
+  if(!auditoriaRegistros.length){
+    statsEl.innerHTML = '';
+    filtroEl.innerHTML = '';
+    cardsEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhuma auditoria registrada ainda.</p>';
+    return;
+  }
+
+  const colaboradores = Array.from(new Set(auditoriaRegistros.map(r => r.colaborador)));
+  filtroEl.innerHTML = ['Todos'].concat(colaboradores).map(c =>
+    `<span class="chip ${auditoriaHistFiltro === c ? 'active' : ''}" style="cursor:pointer;" onclick="filtrarAuditoriaHistorico('${c.replace(/'/g, "\\'")}')">${escapeHtml(c)}</span>`
+  ).join('');
+
+  const media = Math.round(auditoriaRegistros.reduce((s, r) => s + r.percent, 0) / auditoriaRegistros.length);
+  const abaixoMeta = auditoriaRegistros.filter(r => r.percent < 70).length;
+  statsEl.innerHTML = `
+    <div class="stat total"><div class="num">${auditoriaRegistros.length}</div><div class="lbl">Auditorias registradas</div></div>
+    <div class="stat s-concl"><div class="num">${media}%</div><div class="lbl">Aderência média</div></div>
+    <div class="stat s-atraso"><div class="num">${abaixoMeta}</div><div class="lbl">Abaixo de 70%</div></div>
+  `;
+
+  const isAdmin = !!(SESSION && SESSION.papel === 'adm');
+  const filtrados = auditoriaRegistros.filter(r => auditoriaHistFiltro === 'Todos' || r.colaborador === auditoriaHistFiltro);
+
+  cardsEl.innerHTML = filtrados.slice().reverse().map(r => {
+    const compactHtml = r.itens.map(i => {
+      const bad = i.nota < 10;
+      return `<div class="checklist-item ${bad ? 'bad' : ''}"><span>${escapeHtml(i.item)}</span><span class="checklist-item-val">${i.nota}</span></div>`;
+    }).join('');
+    const badgeStyle = r.percent >= 80 ? 'background:var(--sage-light);color:#2C6B45;' : (r.percent >= 50 ? 'background:var(--amber-light);color:#8A5A1E;' : 'background:var(--red-light);color:#8A2E22;');
+    return `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-title-row">
+              <span class="area-tag" style="${badgeStyle}">${r.percent}%</span>
+              <span class="card-title">${escapeHtml(r.colaborador)} · ${escapeHtml(r.cargo)}</span>
+            </div>
+            <div class="card-sub">${escapeHtml(r.data)} · ${r.total}/${r.maxTotal} pontos${r.avaliador ? ' · avaliado por ' + escapeHtml(r.avaliador) : ''}</div>
+          </div>
+          ${isAdmin ? `<button class="rowdel" onclick="excluirAuditoria('${r.id}')">Excluir</button>` : ''}
+        </div>
+        <div class="checklist-items-grid">${compactHtml}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filtrarAuditoriaHistorico(colaborador){
+  auditoriaHistFiltro = colaborador;
+  renderAuditoriaHistorico();
+}
+
+async function excluirAuditoria(id){
+  if(!confirm('Excluir esta auditoria? Essa ação não pode ser desfeita.')) return;
+  const backup = auditoriaRegistros.slice();
+  auditoriaRegistros = auditoriaRegistros.filter(r => r.id !== id);
+  try{
+    await storageSet('auditoria-registros', JSON.stringify(auditoriaRegistros));
+    renderAuditoriaHistorico();
+  }catch(e){
+    auditoriaRegistros = backup;
+    if(String(e.message) === 'AUTH_EXPIRED') return;
+    alert('Não foi possível excluir: ' + (e.message || e));
+    renderAuditoriaHistorico();
+  }
 }
 
 /* ===================== INIT ===================== */
