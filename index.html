@@ -4887,30 +4887,58 @@ function renderAvesPesagemResumo(){
     </div>`;
 }
 
+/** Ave selecionada no filtro do gráfico de evolução de peso ("todas" = todas
+  * misturadas, como era antes). Fica fora da função pra sobreviver a
+  * re-renderizações -- assim o filtro escolhido não reseta sozinho. */
+let avesChartFiltro = 'todas';
+
 function renderAvesWeightChart(){
   const container = document.getElementById('sub-aves-treinamento');
   const existing = document.getElementById('aves-chart-block');
   if(existing) existing.remove();
 
-  const items = (logData['aves-treinamento'] || [])
+  const todosItens = (logData['aves-treinamento'] || [])
     .filter(r => r.data)
     .sort((a,b) => new Date(a.data) - new Date(b.data));
 
+  const avesUnicas = [...new Set(todosItens.map(r => r.ave_id).filter(Boolean))].sort();
+  if(avesChartFiltro !== 'todas' && avesUnicas.indexOf(avesChartFiltro) === -1){
+    avesChartFiltro = 'todas'; // a ave escolhida não tem mais registros -- volta pro padrão
+  }
+
+  const items = avesChartFiltro === 'todas'
+    ? todosItens
+    : todosItens.filter(r => r.ave_id === avesChartFiltro);
+
+  const seletorHtml = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Ave:</label>
+      <select onchange="avesChartFiltro=this.value;renderAvesWeightChart();" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+        <option value="todas" ${avesChartFiltro==='todas'?'selected':''}>Todas as aves</option>
+        ${avesUnicas.map(a => `<option value="${escapeHtml(a)}" ${avesChartFiltro===a?'selected':''}>${escapeHtml(a)}</option>`).join('')}
+      </select>
+    </div>
+  `;
+
+  const legendaLabel = avesChartFiltro === 'todas' ? 'Peso do dia' : ('Peso de ' + avesChartFiltro);
+
   const chartHtml = items.length === 0
     ? `<div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
-         <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Adicione registros de treinamento com data e pesos para ver o gráfico de evolução.</p>
+         ${seletorHtml}
+         <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum registro de treinamento com data e peso${avesChartFiltro !== 'todas' ? ' para esta ave' : ''} ainda.</p>
        </div>`
     : (() => {
         const series = [
-          { label:'Peso do dia (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) }
+          { label: legendaLabel + ' (g)', color:'#C97A2B', points: items.map((r,i)=>({ x:i, y:parseFloat(r.peso_inicial)||0, tick:r.data })) }
         ];
         const svg = buildLineChartSVG(series);
         return `
           <div class="logtable-wrap" id="aves-chart-block" style="margin-top:12px;">
             <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Evolução de peso por sessão de treinamento</div>
+            ${seletorHtml}
             ${svg}
             <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--ink-soft);">
-              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>Peso do dia</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#C97A2B;border-radius:2px;margin-right:5px;"></span>${legendaLabel}</span>
             </div>
           </div>
         `;
