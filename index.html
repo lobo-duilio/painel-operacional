@@ -1203,12 +1203,15 @@
       </div>
     </div>
     <div class="subnav">
-      <button class="active" onclick="showSub('aves','treinamento')">Treinamento</button>
+      <button class="active" onclick="showSub('aves','treinamento')">Pesagem</button>
       <button onclick="showSub('aves','feedback')">Feedbacks</button>
       <button onclick="showSub('aves','cadastro-aves')">Aves cadastradas</button>
       <button onclick="showSub('aves','cadastro-responsaveis')">Responsáveis</button>
     </div>
-    <div class="subview active" id="sub-aves-treinamento"></div>
+    <div class="subview active" id="sub-aves-treinamento">
+      <div id="pesagem-resumo-dia"></div>
+      <div id="sub-aves-treinamento-tabela"></div>
+    </div>
     <div class="subview" id="sub-aves-feedback"></div>
     <div class="subview" id="sub-aves-cadastro-aves"></div>
     <div class="subview" id="sub-aves-cadastro-responsaveis"></div>
@@ -1519,6 +1522,11 @@ function applyTabAccess(){
   if(!APPS_SCRIPT_URL) return; // modo local (sem login): sem restrição
   const isAdmin = !!(SESSION && SESSION.papel === 'adm');
   if(isAdmin) return; // administrador vê todas as abas
+  // Se a sessão salva não tiver o papel definido (sessão antiga, corrompida
+  // ou ainda carregando), NÃO restringe nada -- evita esconder abas (como
+  // "Criação de roedores"/"Treinamento de aves") por engano de quem na
+  // verdade é administrador. A validação real sempre acontece no servidor.
+  if(!SESSION || !SESSION.papel) return;
 
   const allowed = allowedTabsForSession();
   const inOperacionalGroup = OPERACIONAL_GROUP_IDS.some(id => allowed.indexOf(id) !== -1);
@@ -4250,13 +4258,14 @@ const LOG_CONFIGS = {
     ]
   },
   'aves-treinamento': {
-    container:'sub-aves-treinamento',
+    container:'sub-aves-treinamento-tabela',
     cols:[
       {key:'data', label:'Data', type:'date'},
       {key:'hora', label:'Hora', type:'time'},
       {key:'ave_id', label:'Identificação da ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
       {key:'responsavel', label:'Responsável', type:'select', sourceKey:'aves-cadastro-responsaveis', sourceField:'nome'},
       {key:'peso_inicial', label:'Peso do dia (g)', type:'number'},
+      {key:'peso_alimento', label:'Peso do Alimento (g)', type:'number'},
       {key:'alimentacao', label:'Alimentação', type:'select', options:['Pombo','Roedor','Nenhum']},
       {key:'suplementacao', label:'Suplementação', type:'select', options:['Ovo de codorna','VitaHawk','AminoMix','Nenhum']},
       {key:'obs', label:'Observação', type:'text'}
@@ -4364,9 +4373,13 @@ function renderChecklistResults(){
   const problemKey = findHeader(/problema/);
 
   const totalNaoConforme = checklistResponses.filter(rowIsAlert).length;
+  const totalConforme = checklistResponses.length - totalNaoConforme;
+  const resolvidosSet = new Set((logData['custom-checklist-resolvidos']||[]).map(r => r.id));
 
   const cardsHtml = checklistResponses.slice().reverse().map(row => {
     const isAlert = rowIsAlert(row);
+    const idUnico = timestampKey ? String(row[timestampKey]||'') : '';
+    const isResolvido = idUnico && resolvidosSet.has(idUnico);
     const title = escapeHtml((titleKey && row[titleKey]) ? row[titleKey] : 'Checklist');
     const metaParts = [];
     if(dataKey && row[dataKey]) metaParts.push(escapeHtml(String(row[dataKey]).slice(0,10)));
@@ -4397,17 +4410,18 @@ function renderChecklistResults(){
     });
 
     return `
-      <div class="card" style="${isAlert ? 'border-color:var(--red);border-width:1.5px;' : ''}">
+      <div class="card" style="${isAlert && !isResolvido ? 'border-color:var(--red);border-width:1.5px;' : ''}">
         <div class="card-top">
           <div>
             <div class="card-title-row">
-              <span class="area-tag" style="${isAlert ? 'background:var(--red-light);color:#8A2E22;' : 'background:var(--sage-light);color:#2C6B45;'}">
-                ${isAlert ? '⚠️ Não conforme' : '✅ Conforme'}
+              <span class="area-tag" style="${isAlert ? (isResolvido ? 'background:var(--sage-light);color:#2C6B45;' : 'background:var(--red-light);color:#8A2E22;') : 'background:var(--sage-light);color:#2C6B45;'}">
+                ${isAlert ? (isResolvido ? '✅ Resolvido' : '⚠️ Não conforme') : '✅ Conforme'}
               </span>
               <span class="card-title">${title}</span>
             </div>
             <div class="card-sub">${metaParts.join(' · ')}</div>
           </div>
+          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
         </div>
         <div class="checklist-items-grid">${compactHtml.join('')}</div>
         ${longHtml.length ? `<div class="checklist-long-wrap">${longHtml.join('')}</div>` : ''}
@@ -4416,12 +4430,25 @@ function renderChecklistResults(){
   }).join('');
 
   container.innerHTML = `
-    <div class="stats" style="grid-template-columns:repeat(2,1fr);max-width:420px;margin-bottom:16px;">
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);max-width:620px;margin-bottom:16px;">
       <div class="stat total"><div class="num">${checklistResponses.length}</div><div class="lbl">Respostas registradas</div></div>
       <div class="stat s-atraso"><div class="num">${totalNaoConforme}</div><div class="lbl">Com item não conforme</div></div>
+      <div class="stat s-concl"><div class="num">${totalConforme}</div><div class="lbl">Conforme</div></div>
     </div>
     <div class="cards">${cardsHtml}</div>
   `;
+}
+
+/** Marca um checklist "Não conforme" como resolvido (guarda o carimbo de
+  * data/hora daquela resposta específica numa lista separada -- não mexe
+  * na resposta original do formulário). */
+async function marcarChecklistResolvido(idUnico){
+  if(!confirm('Marcar este checklist como resolvido?')) return;
+  const key = 'custom-checklist-resolvidos';
+  logData[key] = logData[key] || [];
+  logData[key].push({ id: idUnico, resolvidoEm: new Date().toISOString() });
+  await saveLog(key);
+  renderChecklistResults();
 }
 
 async function loadLogData(key){
@@ -4565,7 +4592,7 @@ function addLogRow(key){
   saveLog(key);
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
-  if(key === 'aves-treinamento') renderAvesWeightChart();
+  if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4575,7 +4602,7 @@ function updateLogRow(key, id, field, value){
   row[field] = value;
   saveLog(key);
   if(key.startsWith('roedores-')) renderEstoque();
-  if(key === 'aves-treinamento') renderAvesWeightChart();
+  if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4590,7 +4617,7 @@ function deleteLogRow(key, id){
   saveLog(key);
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
-  if(key === 'aves-treinamento') renderAvesWeightChart();
+  if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4814,6 +4841,50 @@ async function renderAllLogs(){
   }
   renderEstoque();
   renderAvesWeightChart();
+  renderAvesPesagemResumo();
+}
+
+/** Painel de visualização rápida com as últimas 12 pesagens registradas
+  * HOJE, em formato de cartões (melhor no celular do que a tabela larga
+  * de sempre). Fica acima da tabela completa, que continua existindo
+  * para ver/editar todo o histórico. */
+function renderAvesPesagemResumo(){
+  const container = document.getElementById('pesagem-resumo-dia');
+  if(!container) return;
+  const hoje = new Date().toISOString().split('T')[0];
+  const itens = (logData['aves-treinamento'] || [])
+    .filter(r => String(r.data||'').indexOf(hoje) === 0)
+    .sort((a,b) => String(b.hora||'').localeCompare(String(a.hora||'')))
+    .slice(0, 12);
+
+  if(itens.length === 0){
+    container.innerHTML = `
+      <div class="logtable-wrap" style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Pesagens de hoje</div>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhuma pesagem registrada hoje ainda.</p>
+      </div>`;
+    return;
+  }
+
+  const cardsHtml = itens.map(r => `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;min-width:150px;flex:1 1 150px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <strong style="font-size:13px;">${escapeHtml(r.ave_id||'—')}</strong>
+        <span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(r.hora||'')}</span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-soft);line-height:1.6;">
+        Peso: <strong style="color:var(--navy);">${escapeHtml(r.peso_inicial||'—')} g</strong><br>
+        Alimento: <strong style="color:var(--navy);">${escapeHtml(r.peso_alimento||'—')} g</strong><br>
+        Resp.: ${escapeHtml(r.responsavel||'—')}
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Pesagens de hoje (últimas ${itens.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">${cardsHtml}</div>
+    </div>`;
 }
 
 function renderAvesWeightChart(){
@@ -4858,7 +4929,7 @@ function renderAvesWeightChart(){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
-  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas'];
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
   let batch1;
@@ -4910,6 +4981,12 @@ async function bulkLoadInitialData(){
     try{ checklistResponses = JSON.parse(checklistEntry.value); }catch(e){ checklistResponses = []; }
   }else{
     checklistResponses = [];
+  }
+  const resolvidosEntry = batch1['log-custom-checklist-resolvidos'];
+  if(resolvidosEntry && resolvidosEntry.value){
+    try{ logData['custom-checklist-resolvidos'] = JSON.parse(resolvidosEntry.value); }catch(e){ logData['custom-checklist-resolvidos'] = []; }
+  }else{
+    logData['custom-checklist-resolvidos'] = [];
   }
   renderChecklistResults();
 
