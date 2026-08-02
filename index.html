@@ -4422,7 +4422,7 @@ function renderChecklistResults(){
             </div>
             <div class="card-sub">${metaParts.join(' · ')}</div>
           </div>
-          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
+          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" style="background:var(--sage);color:#fff;border-color:var(--sage);font-weight:600;" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
         </div>
         <div class="checklist-items-grid">${compactHtml.join('')}</div>
         ${longHtml.length ? `<div class="checklist-long-wrap">${longHtml.join('')}</div>` : ''}
