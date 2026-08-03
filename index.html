@@ -2781,7 +2781,17 @@ function renderFaunaRegistros(tabKey){
     </div>
   ` : '';
 
-  const rowsHtml = registros.slice().reverse().slice(0, 20).map(r => {
+  // Ordena pela DATA real da atividade (não pela ordem em que o formulário
+  // foi enviado -- alguém pode preencher hoje um registro de uma atividade
+  // de semanas atrás, então a ordem de envio não é confiável como "mais
+  // recente"). Em caso de empate no dia, usa o horário de início como
+  // critério secundário.
+  const registrosOrdenados = registros.slice().sort((a, b) => {
+    const diffData = new Date(b.data || 0) - new Date(a.data || 0);
+    if (diffData !== 0) return diffData;
+    return String(b.inicio || '').localeCompare(String(a.inicio || ''));
+  });
+  const rowsHtml = registrosOrdenados.slice(0, 20).map(r => {
     const total = FAUNA_METODOS.reduce((acc,m)=>(acc + (parseInt(r[m])||0)),0);
     const metodosHtml = FAUNA_METODOS.filter(m=>(parseInt(r[m])||0)>0)
       .map(m=>`<span class="area-tag" style="font-size:10px;">${FAUNA_METODO_LABELS[m]}: ${r[m]}</span>`).join(' ');
