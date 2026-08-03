@@ -1147,7 +1147,7 @@
 
   <div class="mainnav" id="mainnav">
     <button id="nav-operacional-group" class="active" onclick="showView('geral')">Operacional</button>
-    <button id="nav-coordenacao-group" onclick="showView('coordenacao')">Operacional II (Coordenação)</button>
+    <button id="nav-coordenacao-group" onclick="showView('coordenacao')">Checklist Veicular</button>
     <button id="nav-add-tab" onclick="openNewTabModal()">+ Nova aba</button>
   </div>
 
@@ -1229,6 +1229,7 @@
     <div class="subnav">
       <button class="active" onclick="showSub('auditoria','nova')">Nova auditoria</button>
       <button onclick="showSub('auditoria','historico')">Histórico</button>
+      <button onclick="showSub('auditoria','painel');renderAuditoriaGraficos();">Painel</button>
     </div>
 
     <div class="subview active" id="sub-auditoria-nova">
@@ -1262,7 +1263,7 @@
           <div class="stat s-concl"><div class="num" id="auditValPercent">0%</div><div class="lbl">Aderência</div></div>
         </div>
         <div class="indic-progress-track"><div class="indic-progress-fill" id="auditProgressFill" style="width:0%;background:var(--steel);"></div></div>
-        <button class="btn" style="margin-top:16px;" id="auditSalvarBtn" onclick="salvarAuditoria()">Salvar auditoria</button>
+        <button class="btn" style="margin-top:16px;background:var(--navy);color:#fff;border-color:var(--navy);font-weight:600;" id="auditSalvarBtn" onclick="salvarAuditoria()">Salvar auditoria</button>
         <div id="auditSalvarMsg" style="font-size:12px;color:var(--ink-soft);margin-top:8px;"></div>
       </div>
     </div>
@@ -1274,13 +1275,35 @@
       </div>
       <div class="cards" id="auditHistoricoCards"></div>
     </div>
+
+    <div class="subview" id="sub-auditoria-painel">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Aderência média por colaborador</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;">Média de todas as auditorias já registradas para cada pessoa.</div>
+        <div id="auditGraficoComparativo"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+          <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Colaborador:</label>
+          <select id="auditGraficoColaborador" onchange="renderAuditoriaGraficos()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;"></select>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;">Evolução da aderência e desempenho em cada atribuição individual, ao longo do tempo.</div>
+
+        <div style="font-size:12.5px;font-weight:700;margin:14px 0 8px;">Evolução da aderência (%)</div>
+        <div id="auditGraficoEvolucao"></div>
+
+        <div style="font-size:12.5px;font-weight:700;margin:20px 0 8px;">Nota média por atribuição — onde direcionar atenção</div>
+        <div id="auditGraficoPorItem"></div>
+      </div>
+    </div>
   </div>
 
   <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
   <div class="view" id="view-coordenacao">
     <div class="module-header">
       <div>
-        <h2>Operacional II (Coordenação)</h2>
+        <h2>Checklist Veicular</h2>
         <p>Checklist veicular — resultados</p>
       </div>
       <a class="btn" style="background:var(--navy);color:#fff;border-color:var(--navy);text-decoration:none;"
@@ -4488,7 +4511,7 @@ function renderChecklistResults(){
             </div>
             <div class="card-sub">${metaParts.join(' · ')}</div>
           </div>
-          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
+          ${isAlert && !isResolvido && idUnico ? `<button class="btn small" style="background:var(--sage);color:#fff;border-color:var(--sage);font-weight:600;" onclick="marcarChecklistResolvido('${idUnico.replace(/'/g,"\\'")}')">Marcar como resolvido</button>` : ''}
         </div>
         <div class="checklist-items-grid">${compactHtml.join('')}</div>
         ${longHtml.length ? `<div class="checklist-long-wrap">${longHtml.join('')}</div>` : ''}
@@ -4850,6 +4873,47 @@ function buildLineChartSVG(series, opts){
   return svg;
 }
 
+/** Gráfico de barras horizontais -- bom pra rótulos de texto longos (ex:
+  * nome de uma atribuição/pergunta de auditoria). Cada item: {label, value,
+  * max, color}. Se "color" não vier, calcula sozinho por faixa (verde/
+  * amarelo/vermelho) usando value/max, seguindo o mesmo padrão de cores
+  * já usado no resto do dashboard para aderência/conformidade. */
+function buildBarChartSVG(items, opts){
+  opts = opts || {};
+  const width = opts.width || 640;
+  const barHeight = opts.barHeight || 22;
+  const gap = opts.gap || 10;
+  const labelWidth = opts.labelWidth || 220;
+  const padR = 46;
+  const height = items.length * (barHeight + gap) + gap;
+
+  if(!items.length){
+    return '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Sem dados suficientes para o gráfico ainda.</p>';
+  }
+
+  const corPorFaixa = (value, max) => {
+    const pct = max > 0 ? (value / max) * 100 : 0;
+    if(pct >= 80) return 'var(--sage)';
+    if(pct >= 50) return 'var(--amber)';
+    return 'var(--red)';
+  };
+
+  const trackWidth = width - labelWidth - padR;
+  let svg = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;display:block;">`;
+  items.forEach((it, i) => {
+    const y = gap + i * (barHeight + gap);
+    const pct = it.max > 0 ? Math.max(0, Math.min(1, it.value / it.max)) : 0;
+    const barW = trackWidth * pct;
+    const cor = it.color || corPorFaixa(it.value, it.max);
+    svg += `<text x="0" y="${(y + barHeight/2 + 4).toFixed(1)}" font-size="11" fill="#3A3F44">${escapeHtml(String(it.label).length > 34 ? String(it.label).slice(0,33) + '…' : it.label)}</text>`;
+    svg += `<rect x="${labelWidth}" y="${y}" width="${trackWidth}" height="${barHeight}" rx="5" fill="#EFEDE4"/>`;
+    svg += `<rect x="${labelWidth}" y="${y}" width="${barW.toFixed(1)}" height="${barHeight}" rx="5" fill="${cor}"/>`;
+    svg += `<text x="${labelWidth + trackWidth + 8}" y="${(y + barHeight/2 + 4).toFixed(1)}" font-size="11" font-weight="700" fill="#3A3F44">${it.valueLabel != null ? it.valueLabel : it.value}</text>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
 function renderEstoque(){
   const container = document.getElementById('sub-roedores-estoque');
   const ent = logData['roedores-entrada'] || [];
@@ -5157,6 +5221,7 @@ async function loadAuditoria(){
   }
   mudarColaboradorAuditoria();
   renderAuditoriaHistorico();
+  renderAuditoriaGraficos();
 }
 
 function mudarColaboradorAuditoria(){
@@ -5253,6 +5318,7 @@ async function salvarAuditoria(){
     await storageSet('auditoria-registros', JSON.stringify(auditoriaRegistros));
     msgEl.textContent = 'Auditoria salva em ' + new Date().toLocaleString('pt-BR') + '.';
     renderAuditoriaHistorico();
+    renderAuditoriaGraficos();
   }catch(e){
     auditoriaRegistros.pop();
     if(String(e.message) === 'AUTH_EXPIRED') return;
@@ -5317,6 +5383,81 @@ function renderAuditoriaHistorico(){
   }).join('');
 }
 
+/** Monta os 3 gráficos da sub-aba "Painel" da Auditoria:
+  * 1) comparativo de aderência média entre todos os colaboradores;
+  * 2) evolução da aderência (%) do colaborador selecionado ao longo do
+  *    tempo;
+  * 3) nota média de CADA atribuição específica desse colaborador (a lista
+  *    de atribuições é diferente por pessoa/cargo -- vem de
+  *    AUDITORIA_MATRIZ) ordenada da pior pra melhor, pra apontar
+  *    exatamente onde precisa de mais atenção/direcionamento. */
+function renderAuditoriaGraficos(){
+  const compEl = document.getElementById('auditGraficoComparativo');
+  const selEl = document.getElementById('auditGraficoColaborador');
+  const evoEl = document.getElementById('auditGraficoEvolucao');
+  const itemEl = document.getElementById('auditGraficoPorItem');
+  if(!compEl || !selEl || !evoEl || !itemEl) return;
+
+  // --- 1) Comparativo entre colaboradores ---
+  const todosColaboradores = Object.keys(AUDITORIA_MATRIZ);
+  const mediaPorColaborador = todosColaboradores.map(nome => {
+    const regs = auditoriaRegistros.filter(r => r.colaborador === nome);
+    const media = regs.length ? Math.round(regs.reduce((s,r)=>s+r.percent,0) / regs.length) : null;
+    return { nome, cargo: AUDITORIA_MATRIZ[nome].cargo, media, qtd: regs.length };
+  });
+  const comItens = mediaPorColaborador.filter(c => c.media != null);
+  if(comItens.length === 0){
+    compEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhuma auditoria registrada ainda. Preencha ao menos uma para ver os gráficos.</p>';
+  }else{
+    const barItems = comItens
+      .slice()
+      .sort((a,b)=>b.media-a.media)
+      .map(c => ({ label: c.nome + ' (' + c.cargo + ')', value: c.media, max: 100, valueLabel: c.media + '%' }));
+    compEl.innerHTML = buildBarChartSVG(barItems, { width: 640, labelWidth: 240 });
+  }
+
+  // --- Seletor de colaborador (mantém a selecao atual se possivel) ---
+  const selecaoAtual = selEl.value || todosColaboradores[0];
+  selEl.innerHTML = todosColaboradores.map(nome =>
+    `<option value="${escapeHtml(nome)}" ${nome===selecaoAtual?'selected':''}>${escapeHtml(nome)} (${escapeHtml(AUDITORIA_MATRIZ[nome].cargo)})</option>`
+  ).join('');
+  const colaboradorSelecionado = selEl.value;
+
+  const regsColaborador = auditoriaRegistros
+    .filter(r => r.colaborador === colaboradorSelecionado)
+    .slice()
+    .sort((a,b)=> new Date(a.data) - new Date(b.data));
+
+  // --- 2) Evolução da aderência (%) ao longo do tempo ---
+  if(regsColaborador.length === 0){
+    evoEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhuma auditoria registrada ainda para ' + escapeHtml(colaboradorSelecionado) + '.</p>';
+  }else{
+    const pontos = regsColaborador.map((r,i) => ({ x:i, y:r.percent, tick:r.data }));
+    evoEl.innerHTML = buildLineChartSVG([{ label:'Aderência (%)', color:'#2E6DA4', points: pontos }]);
+  }
+
+  // --- 3) Nota média por atribuição especifica, da pior pra melhor ---
+  if(regsColaborador.length === 0){
+    itemEl.innerHTML = '';
+  }else{
+    const somaPorItem = {};
+    const qtdPorItem = {};
+    regsColaborador.forEach(r => {
+      let itensArr = [];
+      try{ itensArr = typeof r.itens === 'string' ? JSON.parse(r.itens) : (r.itens || []); }catch(e){ itensArr = []; }
+      itensArr.forEach(it => {
+        somaPorItem[it.item] = (somaPorItem[it.item] || 0) + it.nota;
+        qtdPorItem[it.item] = (qtdPorItem[it.item] || 0) + 1;
+      });
+    });
+    const itemBars = Object.keys(somaPorItem)
+      .map(item => ({ label: item, value: Math.round((somaPorItem[item] / qtdPorItem[item]) * 10) / 10, max: 10 }))
+      .sort((a,b) => a.value - b.value)
+      .map(it => Object.assign({}, it, { valueLabel: it.value + ' / 10' }));
+    itemEl.innerHTML = buildBarChartSVG(itemBars, { width: 640, labelWidth: 280, barHeight: 20, gap: 8 });
+  }
+}
+
 function filtrarAuditoriaHistorico(colaborador){
   auditoriaHistFiltro = colaborador;
   renderAuditoriaHistorico();
@@ -5329,6 +5470,7 @@ async function excluirAuditoria(id){
   try{
     await storageSet('auditoria-registros', JSON.stringify(auditoriaRegistros));
     renderAuditoriaHistorico();
+    renderAuditoriaGraficos();
   }catch(e){
     auditoriaRegistros = backup;
     if(String(e.message) === 'AUTH_EXPIRED') return;
