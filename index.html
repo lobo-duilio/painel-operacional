@@ -4982,7 +4982,12 @@ async function renderAllLogs(){
 function renderAvesPesagemResumo(){
   const container = document.getElementById('pesagem-resumo-dia');
   if(!container) return;
-  const hoje = new Date().toISOString().split('T')[0];
+  // Data de "hoje" no horario LOCAL (Brasil), nao em UTC -- usar toISOString()
+  // aqui dava a data errada a partir de ~21h (horario de Brasilia), porque em
+  // UTC ja tinha virado o dia seguinte, e o filtro nunca encontrava as
+  // pesagens registradas mais tarde no mesmo dia local.
+  const agora = new Date();
+  const hoje = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
   const itens = (logData['aves-treinamento'] || [])
     .filter(r => String(r.data||'').indexOf(hoje) === 0)
     .sort((a,b) => String(b.hora||'').localeCompare(String(a.hora||'')))
