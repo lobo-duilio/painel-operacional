@@ -2781,7 +2781,7 @@ function renderFaunaRegistros(tabKey){
     </div>
   ` : '';
 
-  const rowsHtml = registros.slice().reverse().slice(0, 200).map(r => {
+  const rowsHtml = registros.slice().reverse().slice(0, 20).map(r => {
     const total = FAUNA_METODOS.reduce((acc,m)=>(acc + (parseInt(r[m])||0)),0);
     const metodosHtml = FAUNA_METODOS.filter(m=>(parseInt(r[m])||0)>0)
       .map(m=>`<span class="area-tag" style="font-size:10px;">${FAUNA_METODO_LABELS[m]}: ${r[m]}</span>`).join(' ');
@@ -2812,7 +2812,7 @@ function renderFaunaRegistros(tabKey){
 
   const totalReg = registros.length;
   const showing = Math.min(totalReg, 200);
-  const moreMsg = totalReg > 200 ? `<p style="font-size:11.5px;color:var(--ink-soft);text-align:center;margin:8px 0;">Exibindo os 200 registros mais recentes de ${totalReg} total. Use o Relatório para análises completas.</p>` : '';
+  const moreMsg = totalReg > 20 ? `<p style="font-size:11.5px;color:var(--ink-soft);text-align:center;margin:8px 0;">Exibindo os 20 registros mais recentes de ${totalReg} total. Use o Relatório para análises completas.</p>` : '';
 
   container.innerHTML = addFormHtml + moreMsg + '<div class="cards">' + rowsHtml + '</div>';
 }
@@ -4982,12 +4982,7 @@ async function renderAllLogs(){
 function renderAvesPesagemResumo(){
   const container = document.getElementById('pesagem-resumo-dia');
   if(!container) return;
-  // Data de "hoje" no horario LOCAL (Brasil), nao em UTC -- usar toISOString()
-  // aqui dava a data errada a partir de ~21h (horario de Brasilia), porque em
-  // UTC ja tinha virado o dia seguinte, e o filtro nunca encontrava as
-  // pesagens registradas mais tarde no mesmo dia local.
-  const agora = new Date();
-  const hoje = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
+  const hoje = new Date().toISOString().split('T')[0];
   const itens = (logData['aves-treinamento'] || [])
     .filter(r => String(r.data||'').indexOf(hoje) === 0)
     .sort((a,b) => String(b.hora||'').localeCompare(String(a.hora||'')))
