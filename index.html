@@ -1213,7 +1213,10 @@
       <div id="pesagem-resumo-dia"></div>
       <div id="sub-aves-treinamento-tabela"></div>
     </div>
-    <div class="subview" id="sub-aves-feedback"></div>
+    <div class="subview" id="sub-aves-feedback">
+      <div id="feedback-resumo-dia"></div>
+      <div id="sub-aves-feedback-tabela"></div>
+    </div>
     <div class="subview" id="sub-aves-cadastro-aves"></div>
     <div class="subview" id="sub-aves-cadastro-responsaveis"></div>
   </div>
@@ -4372,7 +4375,7 @@ const LOG_CONFIGS = {
     ]
   },
   'aves-feedback': {
-    container:'sub-aves-feedback',
+    container:'sub-aves-feedback-tabela',
     cols:[
       {key:'data', label:'Data', type:'date'},
       {key:'ave_id', label:'Identificação da ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
@@ -4693,6 +4696,7 @@ function addLogRow(key){
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
+  if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4703,6 +4707,7 @@ function updateLogRow(key, id, field, value){
   saveLog(key);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
+  if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4718,6 +4723,7 @@ function deleteLogRow(key, id){
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
+  if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -4983,6 +4989,7 @@ async function renderAllLogs(){
   renderEstoque();
   renderAvesWeightChart();
   renderAvesPesagemResumo();
+  renderAvesFeedbackResumo();
 }
 
 /** Painel de visualização rápida com as últimas 12 pesagens registradas
@@ -5032,6 +5039,49 @@ function renderAvesPesagemResumo(){
   * misturadas, como era antes). Fica fora da função pra sobreviver a
   * re-renderizações -- assim o filtro escolhido não reseta sozinho. */
 let avesChartFiltro = 'todas';
+
+/** Painel de consulta rápida com os feedbacks de treinamento registrados
+  * HOJE (horário local), em formato de cartões -- dá destaque ao texto do
+  * feedback em si, que é o conteúdo mais importante pra quem for consultar
+  * depois. Não existe campo de hora aqui (só data), então dentro do mesmo
+  * dia usa a ordem em que foram cadastrados (mais recente por último no
+  * array), invertida pra mostrar o mais novo primeiro. */
+function renderAvesFeedbackResumo(){
+  const container = document.getElementById('feedback-resumo-dia');
+  if(!container) return;
+  const agora = new Date();
+  const hoje = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
+  const itens = (logData['aves-feedback'] || [])
+    .filter(r => String(r.data||'').indexOf(hoje) === 0)
+    .slice()
+    .reverse();
+
+  if(itens.length === 0){
+    container.innerHTML = `
+      <div class="logtable-wrap" style="margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Feedbacks de hoje</div>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum feedback registrado hoje ainda.</p>
+      </div>`;
+    return;
+  }
+
+  const cardsHtml = itens.map(r => `
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+        <strong style="font-size:13.5px;">${escapeHtml(r.ave_id||'—')}</strong>
+        <span style="font-size:11px;color:var(--ink-soft);background:#F2F0E8;padding:2px 8px;border-radius:20px;">${escapeHtml(r.tipo_treinamento||'—')}</span>
+      </div>
+      <div style="font-size:12.5px;color:#3A3F44;line-height:1.5;margin-bottom:6px;">${escapeHtml(r.feedback||'—')}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">Responsável: ${escapeHtml(r.responsavel||'—')}</div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Feedbacks de hoje (${itens.length})</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">${cardsHtml}</div>
+    </div>`;
+}
 
 function renderAvesWeightChart(){
   const container = document.getElementById('sub-aves-treinamento');
