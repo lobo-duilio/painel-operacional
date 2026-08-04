@@ -5350,7 +5350,7 @@ function mudarColaboradorAuditoria(){
   container.innerHTML = dados.itens.map((item, index) => `
     <div class="card" style="padding:12px 14px;margin-bottom:8px;background:#FCFCFA;">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px;">${index + 1}. ${escapeHtml(item)}</div>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px;">
         <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;">
           <input type="radio" name="audit_item_${index}" value="0" onchange="atualizarDashboardAuditoria()"> 0 · Não conforme
         </label>
@@ -5361,6 +5361,7 @@ function mudarColaboradorAuditoria(){
           <input type="radio" name="audit_item_${index}" value="10" checked onchange="atualizarDashboardAuditoria()"> 10 · Conforme
         </label>
       </div>
+      <textarea id="audit_obs_${index}" placeholder="Observações sobre este item (opcional)..." rows="2" style="width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:12px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
     </div>
   `).join('');
 
@@ -5387,6 +5388,13 @@ function atualizarDashboardAuditoria(){
   fill.style.background = percent >= 80 ? 'var(--sage)' : (percent >= 50 ? 'var(--amber)' : 'var(--red)');
 }
 
+/** null = criando uma auditoria nova (comportamento de sempre). Quando
+  * setado (pelo botão "Editar" no histórico), contém o id do registro
+  * sendo editado -- nesse caso salvarAuditoria() ATUALIZA esse registro em
+  * vez de criar um novo, preservando "criadoEm" e gravando
+  * "modificadoEm". */
+let auditoriaEditandoId = null;
+
 async function salvarAuditoria(){
   if(!canManageTab('auditoria')){
     alert('Você não tem permissão para salvar auditorias.');
@@ -5404,42 +5412,136 @@ async function salvarAuditoria(){
     const radios = document.getElementsByName('audit_item_' + index);
     let nota = 10;
     for(const r of radios){ if(r.checked) nota = parseInt(r.value); }
-    return { item: item, nota: nota };
+    const obsEl = document.getElementById('audit_obs_' + index);
+    const observacao = obsEl ? obsEl.value.trim() : '';
+    return { item: item, nota: nota, observacao: observacao };
   });
   const total = itens.reduce((s, i) => s + i.nota, 0);
   const maxTotal = itens.length * 10;
   const percent = maxTotal > 0 ? Math.round((total / maxTotal) * 100) : 0;
-
-  const registro = {
-    id: 'aud_' + Date.now(),
-    colaborador: colaborador,
-    cargo: dados.cargo,
-    data: dataAuditoria,
-    itens: JSON.stringify(itens), // string, não array: cada registro vira 1 linha/1 célula por campo na planilha
-    total: total,
-    maxTotal: maxTotal,
-    percent: percent,
-    avaliador: (SESSION && SESSION.nome) ? SESSION.nome : '',
-    criadoEm: new Date().toISOString()
-  };
 
   const btn = document.getElementById('auditSalvarBtn');
   const msgEl = document.getElementById('auditSalvarMsg');
   btn.disabled = true;
   msgEl.textContent = 'Salvando…';
 
-  auditoriaRegistros.push(registro);
+  const editando = !!auditoriaEditandoId;
+  let indexEditado = -1;
+  let backupRegistro = null;
+
+  if(editando){
+    indexEditado = auditoriaRegistros.findIndex(r => r.id === auditoriaEditandoId);
+    if(indexEditado === -1){
+      msgEl.textContent = 'Não foi possível salvar: esse registro não existe mais.';
+      btn.disabled = false;
+      return;
+    }
+    backupRegistro = Object.assign({}, auditoriaRegistros[indexEditado]);
+    auditoriaRegistros[indexEditado] = Object.assign({}, auditoriaRegistros[indexEditado], {
+      colaborador: colaborador,
+      cargo: dados.cargo,
+      data: dataAuditoria,
+      itens: JSON.stringify(itens),
+      total: total,
+      maxTotal: maxTotal,
+      percent: percent,
+      modificadoEm: new Date().toISOString()
+    });
+  }else{
+    auditoriaRegistros.push({
+      id: 'aud_' + Date.now(),
+      colaborador: colaborador,
+      cargo: dados.cargo,
+      data: dataAuditoria,
+      itens: JSON.stringify(itens), // string, não array: cada registro vira 1 linha/1 célula por campo na planilha
+      total: total,
+      maxTotal: maxTotal,
+      percent: percent,
+      avaliador: (SESSION && SESSION.nome) ? SESSION.nome : '',
+      criadoEm: new Date().toISOString()
+    });
+  }
+
   try{
     await storageSet('auditoria-registros', JSON.stringify(auditoriaRegistros));
-    msgEl.textContent = 'Auditoria salva em ' + new Date().toLocaleString('pt-BR') + '.';
+    msgEl.textContent = (editando ? 'Auditoria atualizada em ' : 'Auditoria salva em ') + new Date().toLocaleString('pt-BR') + '.';
+    if(editando) cancelarEdicaoAuditoria(false);
     renderAuditoriaHistorico();
     renderAuditoriaGraficos();
   }catch(e){
-    auditoriaRegistros.pop();
+    if(editando){ auditoriaRegistros[indexEditado] = backupRegistro; }
+    else{ auditoriaRegistros.pop(); }
     if(String(e.message) === 'AUTH_EXPIRED') return;
     msgEl.textContent = 'Erro ao salvar: ' + (e.message || e);
   }finally{
     btn.disabled = false;
+  }
+}
+
+/** Troca para a sub-aba "Nova auditoria" sem depender do "event" global
+  * (showSub() genérico usa event.target, que não existe corretamente
+  * quando chamado de dentro de outra função, só quando é o próprio
+  * onclick de um botão do subnav). */
+function ativarSubAuditoriaNova(){
+  document.querySelectorAll('#view-auditoria .subview').forEach(v => v.classList.remove('active'));
+  const alvo = document.getElementById('sub-auditoria-nova');
+  if(alvo) alvo.classList.add('active');
+  const btns = document.querySelectorAll('#view-auditoria .subnav button');
+  btns.forEach(b => b.classList.remove('active'));
+  if(btns[0]) btns[0].classList.add('active');
+}
+
+/** Carrega uma auditoria já registrada de volta no formulário "Nova
+  * auditoria" para edição. Ao salvar depois disso, o registro existente é
+  * atualizado (não cria um novo) -- ver salvarAuditoria(). */
+function editarAuditoria(id){
+  const registro = auditoriaRegistros.find(r => r.id === id);
+  if(!registro) return;
+
+  ativarSubAuditoriaNova();
+  auditoriaEditandoId = id;
+
+  document.getElementById('auditColaborador').value = registro.colaborador;
+  document.getElementById('auditData').value = registro.data;
+  mudarColaboradorAuditoria();
+
+  let itensArr = [];
+  try{ itensArr = typeof registro.itens === 'string' ? JSON.parse(registro.itens) : (registro.itens || []); }catch(e){ itensArr = []; }
+  itensArr.forEach((it, index) => {
+    const radios = document.getElementsByName('audit_item_' + index);
+    for(const r of radios){ if(parseInt(r.value) === it.nota) r.checked = true; }
+    const obsEl = document.getElementById('audit_obs_' + index);
+    if(obsEl && it.observacao) obsEl.value = it.observacao;
+  });
+  atualizarDashboardAuditoria();
+  mostrarAvisoEdicaoAuditoria();
+}
+
+function mostrarAvisoEdicaoAuditoria(){
+  let aviso = document.getElementById('auditEdicaoAviso');
+  if(!aviso){
+    aviso = document.createElement('div');
+    aviso.id = 'auditEdicaoAviso';
+    const primeiroCard = document.querySelector('#sub-auditoria-nova .card');
+    primeiroCard.parentNode.insertBefore(aviso, primeiroCard);
+  }
+  aviso.style.cssText = 'background:var(--amber-light);border:1px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;';
+  aviso.innerHTML = '<span>✏️ Editando uma auditoria já registrada. Ao salvar, esse registro será atualizado (não cria um novo).</span><button class="btn small" onclick="cancelarEdicaoAuditoria(true)">Cancelar edição</button>';
+}
+
+/** Sai do modo edição. Se limparFormulario=true (usado no botão "Cancelar
+  * edição"), também reseta a data e as respostas do formulário para o
+  * estado padrão de uma auditoria nova. Quando chamada depois de um save
+  * bem-sucedido, limparFormulario=false porque o formulário já reflete o
+  * que acabou de ser salvo. */
+function cancelarEdicaoAuditoria(limparFormulario){
+  auditoriaEditandoId = null;
+  const aviso = document.getElementById('auditEdicaoAviso');
+  if(aviso) aviso.remove();
+  if(limparFormulario){
+    const dataInput = document.getElementById('auditData');
+    if(dataInput) dataInput.valueAsDate = new Date();
+    mudarColaboradorAuditoria();
   }
 }
 
@@ -5477,9 +5579,12 @@ function renderAuditoriaHistorico(){
     try{ itensArr = typeof r.itens === 'string' ? JSON.parse(r.itens) : (r.itens || []); }catch(e){ itensArr = []; }
     const compactHtml = itensArr.map(i => {
       const bad = i.nota < 10;
-      return `<div class="checklist-item ${bad ? 'bad' : ''}"><span>${escapeHtml(i.item)}</span><span class="checklist-item-val">${i.nota}</span></div>`;
+      const obsHtml = i.observacao ? `<div style="font-size:11px;color:var(--ink-soft);margin:2px 0 6px 2px;">📝 ${escapeHtml(i.observacao)}</div>` : '';
+      return `<div class="checklist-item ${bad ? 'bad' : ''}"><span>${escapeHtml(i.item)}</span><span class="checklist-item-val">${i.nota}</span></div>${obsHtml}`;
     }).join('');
     const badgeStyle = r.percent >= 80 ? 'background:var(--sage-light);color:#2C6B45;' : (r.percent >= 50 ? 'background:var(--amber-light);color:#8A5A1E;' : 'background:var(--red-light);color:#8A2E22;');
+    const criadoTxt = r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '';
+    const modificadoTxt = r.modificadoEm ? new Date(r.modificadoEm).toLocaleString('pt-BR') : '';
     return `
       <div class="card">
         <div class="card-top">
@@ -5489,8 +5594,9 @@ function renderAuditoriaHistorico(){
               <span class="card-title">${escapeHtml(r.colaborador)} · ${escapeHtml(r.cargo)}</span>
             </div>
             <div class="card-sub">${escapeHtml(r.data)} · ${r.total}/${r.maxTotal} pontos${r.avaliador ? ' · avaliado por ' + escapeHtml(r.avaliador) : ''}</div>
+            <div class="card-sub" style="font-size:11px;">${criadoTxt ? 'Criado em ' + criadoTxt : ''}${modificadoTxt ? ' · Editado em ' + modificadoTxt : ''}</div>
           </div>
-          ${isAdmin ? `<button class="rowdel" onclick="excluirAuditoria('${r.id}')">Excluir</button>` : ''}
+          ${isAdmin ? `<div style="display:flex;gap:8px;flex-shrink:0;"><button class="btn small" onclick="editarAuditoria('${r.id}')">Editar</button><button class="rowdel" onclick="excluirAuditoria('${r.id}')">Excluir</button></div>` : ''}
         </div>
         <div class="checklist-items-grid">${compactHtml}</div>
       </div>
