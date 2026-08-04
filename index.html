@@ -3051,6 +3051,11 @@ function gerarRelatorioFauna(tabKey){
     });
   });
 
+  // Monitoramento (pombos observados) é separado do total de métodos de
+  // controle acima -- é uma observação, não uma ação de captura/remoção,
+  // então não deve entrar na soma de "Total animais".
+  const totMonitoramento = registros.reduce((a,r)=>a+(parseInt(r.monitoramento)||0), 0);
+
   // Totais por espécie
   const totEspecie = {};
   registros.forEach(r=>{
@@ -3105,6 +3110,7 @@ function gerarRelatorioFauna(tabKey){
       </div>
       <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:16px;">
         ${metodosStatsHtml}
+        <div class="stat s-plan" style="min-width:100px;"><div class="num" style="font-size:22px;">${totMonitoramento}</div><div class="lbl">Monitoramento (pombos observados)</div></div>
       </div>
       <div class="logtable-wrap" style="margin-bottom:16px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por espécie</div>
