@@ -1233,6 +1233,7 @@
       <button class="active" onclick="showSub('auditoria','nova')">Nova auditoria</button>
       <button onclick="showSub('auditoria','historico')">Histórico</button>
       <button onclick="showSub('auditoria','painel');renderAuditoriaGraficos();">Painel</button>
+      <button id="auditGerenciarBtn" style="display:none;" onclick="showSub('auditoria','gerenciar');renderAuditoriaGerenciar();">Gerenciar matriz</button>
     </div>
 
     <div class="subview active" id="sub-auditoria-nova">
@@ -1240,16 +1241,7 @@
         <div class="modal-form-grid">
           <div>
             <label>Colaborador avaliado</label>
-            <select id="auditColaborador" onchange="mudarColaboradorAuditoria()">
-              <option value="Duílio">Duílio Francisco Lôbo (Gerência Operacional)</option>
-              <option value="Raian">Raian (Coordenação Operacional)</option>
-              <option value="Tainan">Tainan (Coordenação Analista)</option>
-              <option value="Juliana">Juliana (Equipe Técnica)</option>
-              <option value="Matheus">Matheus (Equipe Técnica)</option>
-              <option value="Larissa">Larissa (Equipe Técnica)</option>
-              <option value="Rafael">Rafael (Equipe Técnica)</option>
-              <option value="Felipe">Felipe (Equipe Técnica)</option>
-            </select>
+            <select id="auditColaborador" onchange="mudarColaboradorAuditoria()"></select>
           </div>
           <div>
             <label>Data da auditoria</label>
@@ -1299,6 +1291,11 @@
         <div style="font-size:12.5px;font-weight:700;margin:20px 0 8px;">Nota média por atribuição — onde direcionar atenção</div>
         <div id="auditGraficoPorItem"></div>
       </div>
+    </div>
+
+    <div class="subview" id="sub-auditoria-gerenciar">
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;">Adicione, edite ou remova colaboradores e as atribuições/perguntas avaliadas de cada um. Mudanças aqui valem a partir da próxima auditoria feita para essa pessoa -- avaliações já registradas não são alteradas.</div>
+      <div id="auditGerenciarContainer"></div>
     </div>
   </div>
 
@@ -1595,6 +1592,8 @@ function applyRolePermissions(){
   if(addTabBtn) addTabBtn.style.display = (APPS_SCRIPT_URL && !isAdmin) ? 'none' : '';
   const newActivityBtn = document.getElementById('newActivityBtn');
   if(newActivityBtn) newActivityBtn.style.display = canManageTab('geral') ? '' : 'none';
+  const auditGerenciarBtn = document.getElementById('auditGerenciarBtn');
+  if(auditGerenciarBtn) auditGerenciarBtn.style.display = (!APPS_SCRIPT_URL || isAdmin) ? '' : 'none';
 }
 
 /**
@@ -5173,7 +5172,7 @@ function renderAvesWeightChart(){
    está em OPERACIONAL_GROUP_IDS, mas ainda NÃO foi adicionada em getTabOptionsList(),
    então nenhum editor pode ser designado dono dela — só quem é adm vê o botão. */
 
-const AUDITORIA_MATRIZ = {
+const AUDITORIA_MATRIZ_PADRAO = {
   "Duílio": {
     cargo: "Gerência Operacional",
     itens: [
@@ -5268,6 +5267,14 @@ const AUDITORIA_MATRIZ = {
   }
 };
 
+/** AUDITORIA_MATRIZ é a versão MUTÁVEL e editável (via botão "Gerenciar
+  * matriz" na aba Auditoria) -- começa como uma cópia da matriz padrão
+  * acima, e depois de carregado o que estiver salvo no backend (se
+  * houver customização), essa cópia é substituída pelo conteúdo salvo.
+  * AUDITORIA_MATRIZ_PADRAO nunca é alterada -- serve só de ponto de
+  * partida/reset. */
+let AUDITORIA_MATRIZ = JSON.parse(JSON.stringify(AUDITORIA_MATRIZ_PADRAO));
+
 let auditoriaLoaded = false;
 let auditoriaRegistros = [];
 let auditoriaHistFiltro = 'Todos';
@@ -5308,12 +5315,36 @@ async function loadAuditoria(){
   renderAuditoriaGraficos();
 }
 
+/** Preenche o <select> de colaborador da aba "Nova auditoria" a partir da
+  * AUDITORIA_MATRIZ atual (não é mais uma lista fixa no HTML) -- chamado
+  * no carregamento inicial e sempre que a matriz é editada em "Gerenciar
+  * matriz", pra um colaborador novo aparecer na hora. Preserva a seleção
+  * atual quando possível. */
+function popularSelectColaboradorAuditoria(){
+  const select = document.getElementById('auditColaborador');
+  if(!select) return;
+  const nomes = Object.keys(AUDITORIA_MATRIZ).sort();
+  const selecaoAtual = select.value;
+  select.innerHTML = nomes.map(nome =>
+    `<option value="${escapeHtml(nome)}">${escapeHtml(nome)} (${escapeHtml(AUDITORIA_MATRIZ[nome].cargo)})</option>`
+  ).join('');
+  if(nomes.indexOf(selecaoAtual) !== -1) select.value = selecaoAtual;
+  mudarColaboradorAuditoria();
+}
+
 function mudarColaboradorAuditoria(){
   const select = document.getElementById('auditColaborador');
   if(!select) return;
   const colaborador = select.value;
   const dados = AUDITORIA_MATRIZ[colaborador];
-  document.getElementById('auditCargoLabel').textContent = dados.cargo;
+  const cargoLabel = document.getElementById('auditCargoLabel');
+  if(!dados){
+    if(cargoLabel) cargoLabel.textContent = '—';
+    const containerVazio = document.getElementById('auditChecklistContainer');
+    if(containerVazio) containerVazio.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum colaborador cadastrado na matriz ainda. Use "Gerenciar matriz" para adicionar.</p>';
+    return;
+  }
+  cargoLabel.textContent = dados.cargo;
 
   const container = document.getElementById('auditChecklistContainer');
   container.innerHTML = dados.itens.map((item, index) => `
@@ -5542,6 +5573,115 @@ function renderAuditoriaGraficos(){
   }
 }
 
+/** Salva a AUDITORIA_MATRIZ atual (com as edições) no backend, na mesma
+  * chave genérica de sempre. Depois disso, repopula o select da aba "Nova
+  * auditoria" (pra um colaborador novo/removido refletir na hora) e o
+  * painel de gráficos (que também lista os colaboradores). */
+async function salvarAuditoriaMatriz(){
+  logData['custom-auditoria-matriz'] = AUDITORIA_MATRIZ;
+  await saveLog('custom-auditoria-matriz');
+  popularSelectColaboradorAuditoria();
+  if(document.getElementById('auditGraficoComparativo')) renderAuditoriaGraficos();
+}
+
+async function adicionarColaboradorAuditoria(){
+  const nomeEl = document.getElementById('novoColabNome');
+  const cargoEl = document.getElementById('novoColabCargo');
+  const nome = nomeEl.value.trim();
+  const cargo = cargoEl.value.trim();
+  if(!nome || !cargo){ alert('Preencha o nome e o cargo do novo colaborador.'); return; }
+  if(AUDITORIA_MATRIZ[nome]){ alert('Já existe um colaborador com esse nome na matriz.'); return; }
+  AUDITORIA_MATRIZ[nome] = { cargo: cargo, itens: [] };
+  await salvarAuditoriaMatriz();
+  nomeEl.value = '';
+  cargoEl.value = '';
+  renderAuditoriaGerenciar();
+}
+
+async function removerColaboradorAuditoria(nome){
+  if(!confirm('Remover "' + nome + '" da matriz de auditoria?\n\nIsso não apaga as auditorias já feitas para essa pessoa -- só a configuração de perguntas/atribuições dela, para não ser mais avaliada daqui pra frente.')) return;
+  delete AUDITORIA_MATRIZ[nome];
+  await salvarAuditoriaMatriz();
+  renderAuditoriaGerenciar();
+}
+
+async function editarCargoAuditoria(nome){
+  const atual = AUDITORIA_MATRIZ[nome].cargo;
+  const novo = prompt('Novo cargo/área para ' + nome + ':', atual);
+  if(novo == null) return;
+  const novoTrim = novo.trim();
+  if(!novoTrim) return;
+  AUDITORIA_MATRIZ[nome].cargo = novoTrim;
+  await salvarAuditoriaMatriz();
+  renderAuditoriaGerenciar();
+}
+
+async function adicionarItemAuditoria(botaoEl, nome){
+  const input = botaoEl.previousElementSibling;
+  const texto = input.value.trim();
+  if(!texto) return;
+  AUDITORIA_MATRIZ[nome].itens.push(texto);
+  await salvarAuditoriaMatriz();
+  renderAuditoriaGerenciar();
+}
+
+async function removerItemAuditoria(nome, index){
+  if(!confirm('Remover esta atribuição/pergunta da avaliação de ' + nome + '?')) return;
+  AUDITORIA_MATRIZ[nome].itens.splice(index, 1);
+  await salvarAuditoriaMatriz();
+  renderAuditoriaGerenciar();
+}
+
+/** Monta a sub-aba "Gerenciar" da Auditoria: formulário pra adicionar
+  * colaborador novo, e um cartão por colaborador existente com a lista de
+  * atribuições (cada uma removível), campo pra adicionar atribuição nova,
+  * edição do cargo e exclusão do colaborador. */
+function renderAuditoriaGerenciar(){
+  const container = document.getElementById('auditGerenciarContainer');
+  if(!container) return;
+  const nomes = Object.keys(AUDITORIA_MATRIZ).sort();
+
+  const cardsHtml = nomes.map(nome => {
+    const c = AUDITORIA_MATRIZ[nome];
+    const nomeEscapado = escapeHtml(nome).replace(/'/g, "\'");
+    const itensHtml = c.itens.length
+      ? c.itens.map((item, i) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #EFEDE4;">
+            <span style="font-size:12.5px;">${escapeHtml(item)}</span>
+            <a href="#" onclick="removerItemAuditoria('${nomeEscapado}', ${i}); return false;" style="color:var(--red);font-size:11.5px;white-space:nowrap;">Remover</a>
+          </div>`).join('')
+      : '<p style="font-size:12px;color:var(--ink-soft);margin:6px 0;">Nenhuma atribuição cadastrada ainda.</p>';
+
+    return `
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <strong style="font-size:14px;">${escapeHtml(nome)}</strong>
+            <div style="font-size:12px;color:var(--ink-soft);">${escapeHtml(c.cargo)} · <a href="#" onclick="editarCargoAuditoria('${nomeEscapado}'); return false;" style="color:var(--steel);">editar cargo</a></div>
+          </div>
+          <button class="btn small" style="background:var(--red);color:#fff;border-color:var(--red);" onclick="removerColaboradorAuditoria('${nomeEscapado}')">Excluir colaborador</button>
+        </div>
+        <div style="margin-bottom:10px;">${itensHtml}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" placeholder="Nova atribuição/pergunta..." style="flex:1 1 220px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+          <button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="adicionarItemAuditoria(this, '${nomeEscapado}')">Adicionar pergunta</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="card" style="margin-bottom:16px;background:#FCFCFA;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Adicionar colaborador</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="novoColabNome" placeholder="Nome" style="flex:1 1 160px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+        <input type="text" id="novoColabCargo" placeholder="Cargo / área" style="flex:1 1 200px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+        <button class="btn small" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="adicionarColaboradorAuditoria()">Adicionar colaborador</button>
+      </div>
+    </div>
+    ${cardsHtml || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum colaborador cadastrado ainda.</p>'}
+  `;
+}
+
 function filtrarAuditoriaHistorico(colaborador){
   auditoriaHistFiltro = colaborador;
   renderAuditoriaHistorico();
@@ -5573,7 +5713,7 @@ async function excluirAuditoria(id){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
-  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos'];
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
   let batch1;
@@ -5633,6 +5773,18 @@ async function bulkLoadInitialData(){
     logData['custom-checklist-resolvidos'] = [];
   }
   renderChecklistResults();
+
+  // Matriz de auditoria: se já existir uma versão customizada salva (alguém
+  // usou o "Gerenciar matriz" antes), usa ela. Senão, mantém a cópia da
+  // matriz padrão que já foi carregada no script (nada a fazer).
+  const matrizEntry = batch1['log-custom-auditoria-matriz'];
+  if(matrizEntry && matrizEntry.value){
+    try{
+      const matrizSalva = JSON.parse(matrizEntry.value);
+      if(matrizSalva && Object.keys(matrizSalva).length){ AUDITORIA_MATRIZ = matrizSalva; }
+    }catch(e){ /* mantém a matriz padrão se der erro ao ler */ }
+  }
+  popularSelectColaboradorAuditoria();
 
   renderAllLogs();
 
