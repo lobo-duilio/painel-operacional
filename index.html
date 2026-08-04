@@ -4992,24 +4992,47 @@ async function renderAllLogs(){
   renderAvesFeedbackResumo();
 }
 
-/** Painel de visualização rápida com as últimas 12 pesagens registradas
-  * HOJE, em formato de cartões (melhor no celular do que a tabela larga
-  * de sempre). Fica acima da tabela completa, que continua existindo
-  * para ver/editar todo o histórico. */
+/** Data escolhida no seletor do painel de Pesagens ("null" = ainda nao
+  * escolheu nada, usa hoje por padrao). Fica fora da funcao pra sobreviver
+  * a re-renderizacoes, igual o filtro de ave do grafico. */
+let pesagemDataFiltro = null;
+
+/** Painel de consulta rápida das pesagens de um dia (hoje por padrão, mas
+  * dá pra escolher qualquer data no seletor), em formato de cartões
+  * (melhor no celular do que a tabela larga de sempre). Fica acima da
+  * tabela completa, que continua existindo para ver/editar todo o
+  * histórico. Usa data LOCAL (não UTC) para "hoje", já que toISOString()
+  * dá a data errada a partir de ~21h no horário de Brasília. */
 function renderAvesPesagemResumo(){
   const container = document.getElementById('pesagem-resumo-dia');
   if(!container) return;
-  const hoje = new Date().toISOString().split('T')[0];
+
+  const agora = new Date();
+  const hojeStr = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
+  if(!pesagemDataFiltro) pesagemDataFiltro = hojeStr;
+
+  const partes = pesagemDataFiltro.split('-');
+  const dataFormatada = partes.length === 3 ? (partes[2] + '/' + partes[1] + '/' + partes[0]) : pesagemDataFiltro;
+  const ehHoje = pesagemDataFiltro === hojeStr;
+
   const itens = (logData['aves-treinamento'] || [])
-    .filter(r => String(r.data||'').indexOf(hoje) === 0)
-    .sort((a,b) => String(b.hora||'').localeCompare(String(a.hora||'')))
-    .slice(0, 12);
+    .filter(r => String(r.data||'').indexOf(pesagemDataFiltro) === 0)
+    .sort((a,b) => String(b.hora||'').localeCompare(String(a.hora||'')));
+
+  const seletorHtml = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Ver pesagens de:</label>
+      <input type="date" value="${pesagemDataFiltro}" max="${hojeStr}" onchange="pesagemDataFiltro=this.value;renderAvesPesagemResumo();" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+      ${!ehHoje ? `<button class="btn small" onclick="pesagemDataFiltro=null;renderAvesPesagemResumo();">Voltar para hoje</button>` : ''}
+    </div>
+  `;
 
   if(itens.length === 0){
     container.innerHTML = `
       <div class="logtable-wrap" style="margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Pesagens de hoje</div>
-        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhuma pesagem registrada hoje ainda.</p>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Pesagens</div>
+        ${seletorHtml}
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhuma pesagem registrada ${ehHoje ? 'hoje' : ('em ' + dataFormatada)} ainda.</p>
       </div>`;
     return;
   }
@@ -5030,7 +5053,8 @@ function renderAvesPesagemResumo(){
 
   container.innerHTML = `
     <div class="logtable-wrap" style="margin-bottom:14px;">
-      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Pesagens de hoje (últimas ${itens.length})</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Pesagens ${ehHoje ? 'de hoje' : 'de ' + dataFormatada}</div>
+      ${seletorHtml}
       <div style="display:flex;flex-wrap:wrap;gap:10px;">${cardsHtml}</div>
     </div>`;
 }
