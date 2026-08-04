@@ -4639,7 +4639,7 @@ function renderLogTable(key){
       ? `<td><button class="rowdel" onclick="deleteLogRow('${key}',${row.id})">Remover</button></td>`
       : `<td></td>`;
     return `<tr>${tds}${delCell}</tr>`;
-  }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione abaixo.</td></tr>`;
+  }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione acima.</td></tr>`;
 
   const addCells = cfg.cols.map(c=>{
     if(c.type === 'select'){
@@ -4667,8 +4667,8 @@ function renderLogTable(key){
       <table class="logtable">
         <thead><tr>${headCols}</tr></thead>
         <tbody>
-          ${bodyRows}
           ${addRowHtml}
+          ${bodyRows}
         </tbody>
       </table>
       ${adminOnlyNoteHtml}
