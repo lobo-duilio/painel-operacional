@@ -5684,7 +5684,11 @@ function renderAuditoriaGraficos(){
   * auditoria" (pra um colaborador novo/removido refletir na hora) e o
   * painel de gráficos (que também lista os colaboradores). */
 async function salvarAuditoriaMatriz(){
-  logData['custom-auditoria-matriz'] = AUDITORIA_MATRIZ;
+  // O mecanismo genérico 'log-custom-*' só aceita ARRAYS (cada item vira
+  // uma linha na planilha). AUDITORIA_MATRIZ é um objeto aninhado (por
+  // colaborador), não uma lista -- por isso embrulha ele como o único
+  // campo de um único "registro", em vez de salvar o objeto direto.
+  logData['custom-auditoria-matriz'] = [{ matrizJson: JSON.stringify(AUDITORIA_MATRIZ) }];
   await saveLog('custom-auditoria-matriz');
   popularSelectColaboradorAuditoria();
   if(document.getElementById('auditGraficoComparativo')) renderAuditoriaGraficos();
@@ -5886,8 +5890,11 @@ async function bulkLoadInitialData(){
   const matrizEntry = batch1['log-custom-auditoria-matriz'];
   if(matrizEntry && matrizEntry.value){
     try{
-      const matrizSalva = JSON.parse(matrizEntry.value);
-      if(matrizSalva && Object.keys(matrizSalva).length){ AUDITORIA_MATRIZ = matrizSalva; }
+      const arrSalvo = JSON.parse(matrizEntry.value);
+      if(Array.isArray(arrSalvo) && arrSalvo[0] && arrSalvo[0].matrizJson){
+        const matrizSalva = JSON.parse(arrSalvo[0].matrizJson);
+        if(matrizSalva && Object.keys(matrizSalva).length){ AUDITORIA_MATRIZ = matrizSalva; }
+      }
     }catch(e){ /* mantém a matriz padrão se der erro ao ler */ }
   }
   popularSelectColaboradorAuditoria();
