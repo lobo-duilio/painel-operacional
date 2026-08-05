@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Dashboard Operacional</title>
 
+<!-- Evita que o navegador (principalmente no celular / app instalado na tela
+     inicial) sirva uma cópia antiga deste arquivo. Sem isso, uma correção
+     publicada pode "não aparecer" mesmo depois de recarregar a página. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
 <!-- PWA: permite "Adicionar à tela inicial" no Android e iOS, com cara de app -->
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#122238">
@@ -1235,11 +1242,16 @@
       <button onclick="showSub('armadilhas','entrada')">Entrada</button>
       <button onclick="showSub('armadilhas','saida')">Saída</button>
       <button onclick="showSub('armadilhas','avarias')">Avarias</button>
+      <button onclick="showSub('armadilhas','cadastro')">Cadastro de armadilhas</button>
     </div>
     <div class="subview active" id="sub-armadilhas-estoque"></div>
     <div class="subview" id="sub-armadilhas-entrada"></div>
     <div class="subview" id="sub-armadilhas-saida"></div>
     <div class="subview" id="sub-armadilhas-avarias"></div>
+    <div class="subview" id="sub-armadilhas-cadastro">
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Modelos de armadilha cadastrados aqui viram as opções dos campos "Item / modelo" em Entrada, Saída e Avarias — assim o mesmo modelo é sempre escrito igual e o estoque fecha certo.</p>
+      <div id="sub-armadilhas-cadastro-tabela"></div>
+    </div>
   </div>
 
   <!-- VIEW: AUDITORIA (MATRIZ DE ATRIBUIÇÕES) -->
@@ -4389,11 +4401,20 @@ const LOG_CONFIGS = {
       {key:'destino', label:'Destino', type:'text'}
     ]
   },
+  'armadilhas-cadastro': {
+    container:'sub-armadilhas-cadastro-tabela',
+    sortBy:'item',
+    cols:[
+      {key:'item', label:'Item / modelo', type:'text'},
+      {key:'tipo', label:'Tipo', type:'select', options:['Fixa','Desmontável','Outro']},
+      {key:'observacao', label:'Observação', type:'text'}
+    ]
+  },
   'armadilhas-entrada': {
     container:'sub-armadilhas-entrada',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'item', label:'Item / modelo', type:'text'},
+      {key:'item', label:'Item / modelo', type:'select', sourceKey:'armadilhas-cadastro', sourceField:'item'},
       {key:'quantidade', label:'Quantidade', type:'number'},
       {key:'origem', label:'Origem / fornecedor', type:'text'}
     ]
@@ -4402,7 +4423,7 @@ const LOG_CONFIGS = {
     container:'sub-armadilhas-saida',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'item', label:'Item / modelo', type:'text'},
+      {key:'item', label:'Item / modelo', type:'select', sourceKey:'armadilhas-cadastro', sourceField:'item'},
       {key:'quantidade', label:'Quantidade', type:'number'},
       {key:'empreendimento', label:'Empreendimento', type:'text'},
       {key:'responsavel', label:'Responsável', type:'text'}
@@ -4412,7 +4433,7 @@ const LOG_CONFIGS = {
     container:'sub-armadilhas-avarias',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'item', label:'Item / modelo', type:'text'},
+      {key:'item', label:'Item / modelo', type:'select', sourceKey:'armadilhas-cadastro', sourceField:'item'},
       {key:'quantidade', label:'Quantidade', type:'number'},
       {key:'empreendimento', label:'Empreendimento', type:'text'},
       {key:'descricao', label:'Descrição do dano', type:'textarea'}
@@ -4647,6 +4668,13 @@ function canManageList(key){
   return canManageTab(clientKeyToTabId(key));
 }
 
+/** Quantas linhas de histórico cada tabela de registro mostra por vez.
+  * Só vale para tabelas de LANÇAMENTO (as que têm coluna de data, tipo
+  * Pesagem, Feedbacks, Entrada/Saída). Tabelas de CATÁLOGO (aves
+  * cadastradas, responsáveis, modelos de armadilha) continuam aparecendo
+  * inteiras -- ali o usuário precisa enxergar e editar a lista toda. */
+const LOG_TABLE_MAX_LINHAS = 20;
+
 function renderLogTable(key){
   const cfg = LOG_CONFIGS[key];
   if(!cfg) return;
@@ -4654,9 +4682,31 @@ function renderLogTable(key){
   if(!container) return;
 
   try{
-  const rows = logData[key] || [];
+  const todasAsLinhas = logData[key] || [];
+  let rows = todasAsLinhas;
+  let totalOcultos = 0;
+
   if(cfg.sortBy){
-    rows.sort((a,b) => String(a[cfg.sortBy]||'').localeCompare(String(b[cfg.sortBy]||''), 'pt-BR'));
+    // Catálogo: ordem alfabética e mostra tudo.
+    rows = todasAsLinhas.slice().sort((a,b) =>
+      String(a[cfg.sortBy]||'').localeCompare(String(b[cfg.sortBy]||''), 'pt-BR'));
+  }else{
+    const colData = cfg.cols.find(x => x.type === 'date');
+    if(colData){
+      // Tabela de lançamento: mais recente primeiro (desempate pela hora,
+      // quando a tabela tem coluna de hora) e corta nas N mais recentes.
+      const colHora = cfg.cols.find(x => x.type === 'time');
+      rows = todasAsLinhas.slice().sort((a,b) => {
+        const diff = new Date(b[colData.key]||0) - new Date(a[colData.key]||0);
+        if(diff !== 0) return diff;
+        if(colHora) return String(b[colHora.key]||'').localeCompare(String(a[colHora.key]||''));
+        return 0;
+      });
+      if(rows.length > LOG_TABLE_MAX_LINHAS){
+        totalOcultos = rows.length - LOG_TABLE_MAX_LINHAS;
+        rows = rows.slice(0, LOG_TABLE_MAX_LINHAS);
+      }
+    }
   }
 
   const headCols = cfg.cols.map(c=>`<th>${c.label}</th>`).join('') + '<th></th>';
@@ -4714,6 +4764,9 @@ function renderLogTable(key){
   const adminOnlyNoteHtml = (cfg.adminOnly && !canManage) ? `
       <p style="font-size:11.5px;color:var(--ink-soft);margin:8px 0 0;">Somente administradores podem adicionar ou remover itens desta lista.</p>` : '';
 
+  const limiteNoteHtml = totalOcultos > 0 ? `
+      <p style="font-size:11.5px;color:var(--ink-soft);text-align:center;margin:8px 0 0;">Exibindo as ${LOG_TABLE_MAX_LINHAS} linhas mais recentes de ${todasAsLinhas.length} no total.</p>` : '';
+
   container.innerHTML = `
     <div class="logtable-wrap">
       <table class="logtable">
@@ -4724,6 +4777,7 @@ function renderLogTable(key){
         </tbody>
       </table>
       ${adminOnlyNoteHtml}
+      ${limiteNoteHtml}
     </div>
   `;
   }catch(err){
