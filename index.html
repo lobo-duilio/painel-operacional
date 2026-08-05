@@ -707,6 +707,26 @@
     padding:18px 20px;
     overflow-x:auto;
   }
+  /* Tabelas longas ganham rolagem própria em vez de esticar a página
+     inteira. O cabeçalho e a linha de "Adicionar" ficam presos no topo
+     enquanto se rola, para não perder a referência das colunas nem o
+     campo de cadastro. */
+  .logtable-wrap.tabela-rolavel{
+    max-height:440px;
+    overflow-y:auto;
+  }
+  .logtable-wrap.tabela-rolavel table.logtable thead th{
+    position:sticky;
+    top:0;
+    background:var(--panel);
+    z-index:3;
+  }
+  .logtable-wrap.tabela-rolavel table.logtable tbody tr.addrow td{
+    position:sticky;
+    background:var(--panel);
+    z-index:2;
+    box-shadow:0 1px 0 var(--line);
+  }
   table.logtable{
     width:100%;
     border-collapse:collapse;
@@ -6223,6 +6243,61 @@ async function init(skipUrlReload){
     }
   }
 }
+
+/** A partir de quantas linhas de conteúdo a tabela passa a ter rolagem
+  * própria (em vez de esticar a página). */
+const SCROLL_LINHAS_MIN = 10;
+
+/** Percorre TODAS as tabelas do painel e liga/desliga a rolagem interna
+  * conforme a quantidade de linhas. Roda sozinha sempre que algo é
+  * redesenhado na tela (ver o observador logo abaixo), então vale
+  * automaticamente para tabelas novas que venham a existir -- não precisa
+  * lembrar de chamar em cada função de renderização. */
+function aplicarScrollEmTabelasLongas(){
+  document.querySelectorAll('table.logtable').forEach(function(tabela){
+    const wrap = tabela.closest('.logtable-wrap');
+    if(!wrap) return;
+
+    // A linha de "Adicionar" é formulário, não conteúdo -- não conta.
+    const linhasConteudo = tabela.querySelectorAll('tbody tr:not(.addrow):not(.empty-row)').length;
+
+    if(linhasConteudo > SCROLL_LINHAS_MIN){
+      wrap.classList.add('tabela-rolavel');
+      // Prende a linha de "Adicionar" logo abaixo do cabeçalho. A altura
+      // do cabeçalho é medida na hora porque varia com fonte/zoom/tela.
+      const thead = tabela.querySelector('thead');
+      const addRow = tabela.querySelector('tbody tr.addrow');
+      if(thead && addRow){
+        const alturaThead = thead.offsetHeight;
+        addRow.querySelectorAll('td').forEach(function(td){
+          td.style.top = alturaThead + 'px';
+        });
+      }
+    }else{
+      wrap.classList.remove('tabela-rolavel');
+      const addRow = tabela.querySelector('tbody tr.addrow');
+      if(addRow){
+        addRow.querySelectorAll('td').forEach(function(td){ td.style.top = ''; });
+      }
+    }
+  });
+}
+
+// Observa só inclusão/remoção de elementos (childList). Mudar classe ou
+// style é alteração de atributo, que NÃO é observada -- então a própria
+// função não dispara a si mesma em loop.
+(function(){
+  let agendado = false;
+  const observador = new MutationObserver(function(){
+    if(agendado) return;
+    agendado = true;
+    setTimeout(function(){
+      agendado = false;
+      try{ aplicarScrollEmTabelasLongas(); }catch(e){ console.error('Erro ao aplicar rolagem nas tabelas:', e); }
+    }, 60);
+  });
+  observador.observe(document.body, { childList: true, subtree: true });
+})();
 
 init();
 </script>
