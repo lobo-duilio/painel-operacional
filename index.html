@@ -1185,6 +1185,7 @@
     <button id="opsub-aves" onclick="showView('aves')">Treinamento de aves</button>
     <button id="opsub-armadilhas" onclick="showView('armadilhas')">Armadilhas</button>
     <button id="opsub-auditoria" onclick="showView('auditoria')">Auditoria</button>
+    <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Reconhecimento</button>
   </div>
 
   <!-- VIEW: PAINEL GERAL (Atividades) -->
@@ -1349,6 +1350,32 @@
     <div class="subview" id="sub-auditoria-gerenciar">
       <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:14px;">Adicione, edite ou remova colaboradores e as atribuições/perguntas avaliadas de cada um. Mudanças aqui valem a partir da próxima auditoria feita para essa pessoa -- avaliações já registradas não são alteradas.</div>
       <div id="auditGerenciarContainer"></div>
+    </div>
+  </div>
+
+  <!-- VIEW: RECONHECIMENTO -->
+  <div class="view" id="view-reconhecimento">
+    <div class="module-header">
+      <div>
+        <h2>Reconhecimento</h2>
+        <p>Indicadores de reconhecimento por responsável — separado do quadro de cobrança de status</p>
+      </div>
+    </div>
+    <div class="subnav">
+      <button class="active" onclick="showSub('reconhecimento','painel')">Painel</button>
+      <button onclick="showSub('reconhecimento','sucessos')">Registrar sucesso</button>
+      <button onclick="showSub('reconhecimento','incidentes')">Registrar incidente</button>
+    </div>
+    <div class="subview active" id="sub-reconhecimento-painel">
+      <div id="reconhecimentoPainel"></div>
+    </div>
+    <div class="subview" id="sub-reconhecimento-sucessos">
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Lançado pela Coordenação Analista: para cada caso encerrado, registrar se o resultado ficou dentro ou fora do prazo definido em contrato.</p>
+      <div id="sub-reconhecimento-sucessos-tabela"></div>
+    </div>
+    <div class="subview" id="sub-reconhecimento-incidentes">
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Um lançamento por ocorrência. O contador de "dias sem incidente" de cada responsável é calculado a partir da data mais recente aqui registrada.</p>
+      <div id="sub-reconhecimento-incidentes-tabela"></div>
     </div>
   </div>
 
@@ -4334,7 +4361,7 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
-const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria'];
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','reconhecimento'];
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4369,6 +4396,9 @@ function showView(name){
   if(name === 'auditoria' && !auditoriaLoaded){
     loadAuditoria();
   }
+  if(name === 'reconhecimento'){
+    renderReconhecimentoPainel();
+  }
 }
 
 function showSub(module, name){
@@ -4397,6 +4427,9 @@ function showSub(module, name){
   }
   if(module === 'auditoria' && name === 'historico'){
     renderAuditoriaHistorico();
+  }
+  if(module === 'reconhecimento' && name === 'painel'){
+    renderReconhecimentoPainel();
   }
 }
 
@@ -4495,6 +4528,24 @@ const LOG_CONFIGS = {
     adminOnly:true,
     cols:[
       {key:'nome', label:'Nome do responsável', type:'text'}
+    ]
+  },
+  'reconhecimento-sucessos': {
+    container:'sub-reconhecimento-sucessos-tabela',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'responsavel', label:'Responsável', type:'select', get options(){ return Object.keys(AUDITORIA_MATRIZ).sort(); }},
+      {key:'empreendimento', label:'Empreendimento / contrato', type:'text'},
+      {key:'resultado', label:'Resultado', type:'select', options:['Dentro do prazo do contrato','Fora do prazo do contrato']},
+      {key:'obs', label:'Observação', type:'text'}
+    ]
+  },
+  'reconhecimento-incidentes': {
+    container:'sub-reconhecimento-incidentes-tabela',
+    cols:[
+      {key:'data', label:'Data', type:'date'},
+      {key:'responsavel', label:'Responsável', type:'select', get options(){ return Object.keys(AUDITORIA_MATRIZ).sort(); }},
+      {key:'descricao', label:'Descrição', type:'textarea'}
     ]
   }
 };
@@ -4671,6 +4722,76 @@ async function saveLog(key){
 }
 
 /** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
+/** Dias corridos entre uma data (string) e hoje. Retorna null se a data for inválida. */
+function diasDesde(dataStr){
+  const d = new Date(dataStr);
+  if(isNaN(d)) return null;
+  const hoje = new Date();
+  d.setHours(0,0,0,0);
+  hoje.setHours(0,0,0,0);
+  return Math.round((hoje - d) / 86400000);
+}
+
+/** Painel agregado do módulo Reconhecimento: cumprimento de prazo (Painel Geral),
+ * taxa de sucesso dentro do prazo de contrato, e dias sem incidente -- por responsável,
+ * usando a matriz de colaboradores já cadastrada em Auditoria como fonte de nomes. */
+function renderReconhecimentoPainel(){
+  const el = document.getElementById('reconhecimentoPainel');
+  if(!el) return;
+
+  const totalAtiv = data.length;
+  const atrasadas = data.filter(d => d.status === 'Atrasado').length;
+  const pctPrazo = totalAtiv ? Math.round((totalAtiv - atrasadas) / totalAtiv * 100) : 0;
+
+  const sucessos = logData['reconhecimento-sucessos'] || [];
+  const totalSucessos = sucessos.length;
+  const dentroPrazo = sucessos.filter(s => s.resultado === 'Dentro do prazo do contrato').length;
+  const pctSucesso = totalSucessos ? Math.round(dentroPrazo / totalSucessos * 100) : null;
+
+  const incidentes = logData['reconhecimento-incidentes'] || [];
+  const nomes = Object.keys(AUDITORIA_MATRIZ).sort();
+
+  const linhasResponsavel = nomes.map(nome=>{
+    const casosPessoa = sucessos.filter(s=>s.responsavel===nome);
+    const dentroPessoa = casosPessoa.filter(s=>s.resultado==='Dentro do prazo do contrato').length;
+    const pctPessoa = casosPessoa.length ? Math.round(dentroPessoa/casosPessoa.length*100) : null;
+
+    const incidentesPessoa = incidentes.filter(i=>i.responsavel===nome)
+      .slice().sort((a,b)=> new Date(b.data||0) - new Date(a.data||0));
+    const dias = incidentesPessoa.length ? diasDesde(incidentesPessoa[0].data) : null;
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:8px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700;font-size:13.5px;">${nome}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${(AUDITORIA_MATRIZ[nome]||{}).cargo||''}</div>
+        </div>
+        <div style="display:flex;gap:24px;text-align:right;">
+          <div>
+            <div style="font-size:18px;font-weight:700;color:${dias===null?'var(--ink-soft)':'var(--sage)'};">${dias===null?'—':dias}</div>
+            <div style="font-size:10.5px;color:var(--ink-soft);">dias sem incidente</div>
+          </div>
+          <div>
+            <div style="font-size:18px;font-weight:700;color:${pctPessoa===null?'var(--ink-soft)':'var(--steel)'};">${pctPessoa===null?'—':pctPessoa+'%'}</div>
+            <div style="font-size:10.5px;color:var(--ink-soft);">no prazo de contrato (${casosPessoa.length} caso${casosPessoa.length===1?'':'s'})</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
+      <div class="stat total"><div class="num">${pctPrazo}%</div><div class="lbl">Atividades no prazo (Painel Geral)</div></div>
+      <div class="stat s-concl"><div class="num">${pctSucesso===null?'—':pctSucesso+'%'}</div><div class="lbl">Sucesso dentro do prazo de contrato</div></div>
+      <div class="stat s-exec"><div class="num">${totalSucessos}</div><div class="lbl">Casos registrados</div></div>
+    </div>
+    <div class="logtable-wrap">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por responsável</div>
+      ${linhasResponsavel || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum colaborador na matriz.</p>'}
+    </div>
+  `;
+}
+
 function getSelectOptionsForCol(c){
   if(c.options) return c.options;
   const rows = logData[c.sourceKey] || [];
