@@ -1284,6 +1284,14 @@
         <p>Datas de início/término, valor, responsável e status</p>
       </div>
     </div>
+    <div class="card" id="contratosAlertaConfigCard" style="display:none;margin-bottom:16px;">
+      <label style="font-size:12.5px;font-weight:700;">E-mails para alerta de vencimento (30 dias antes) — separados por vírgula</label>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <input type="text" id="contratosAlertaEmailsInput" placeholder="ex: financeiro@empresa.com, gestor@empresa.com" style="flex:1;">
+        <button class="btn" onclick="salvarContratosAlertaEmails()">Salvar</button>
+      </div>
+      <p id="contratosAlertaEmailsStatus" style="font-size:11px;color:var(--ink-soft);margin-top:6px;"></p>
+    </div>
     <div id="sub-contratos-tabela"></div>
   </div>
 
@@ -1686,6 +1694,8 @@ function applyRolePermissions(){
   if(newActivityBtn) newActivityBtn.style.display = canManageTab('geral') ? '' : 'none';
   const auditGerenciarBtn = document.getElementById('auditGerenciarBtn');
   if(auditGerenciarBtn) auditGerenciarBtn.style.display = (!APPS_SCRIPT_URL || isAdmin) ? '' : 'none';
+  const contratosAlertaCard = document.getElementById('contratosAlertaConfigCard');
+  if(contratosAlertaCard) contratosAlertaCard.style.display = (!APPS_SCRIPT_URL || isAdmin) ? '' : 'none';
 }
 
 /**
@@ -4578,6 +4588,7 @@ const LOG_CONFIGS = {
 
 let logData = {};
 let checklistResponses = [];
+let CONTRATOS_ALERTA_EMAILS_STR = '';
 
 /**
  * Mostra as respostas do formulário "Checklist Veicular" como uma
@@ -6058,6 +6069,24 @@ async function salvarAuditoriaMatriz(){
   if(document.getElementById('auditGraficoComparativo')) renderAuditoriaGraficos();
 }
 
+/** Salva a lista de e-mails de alerta de vencimento de contratos (campo
+  * editável no módulo Contratos, só visível para administradores). Usa
+  * o mesmo mecanismo genérico 'log-custom-*': embrulha a string num
+  * único "registro" (uma linha, uma coluna), igual à matriz de auditoria. */
+async function salvarContratosAlertaEmails(){
+  const input = document.getElementById('contratosAlertaEmailsInput');
+  if(!input) return;
+  const val = input.value.trim();
+  logData['contratos-alerta-config'] = [{ emails: val }];
+  await saveLog('contratos-alerta-config');
+  CONTRATOS_ALERTA_EMAILS_STR = val;
+  const status = document.getElementById('contratosAlertaEmailsStatus');
+  if(status){
+    status.textContent = 'Salvo.';
+    setTimeout(()=>{ status.textContent=''; }, 2500);
+  }
+}
+
 async function adicionarColaboradorAuditoria(){
   const nomeEl = document.getElementById('novoColabNome');
   const cargoEl = document.getElementById('novoColabCargo');
@@ -6187,7 +6216,7 @@ async function excluirAuditoria(id){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
-  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz'];
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz', 'log-contratos-alerta-config'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
   let batch1;
@@ -6262,6 +6291,18 @@ async function bulkLoadInitialData(){
     }catch(e){ /* mantém a matriz padrão se der erro ao ler */ }
   }
   popularSelectColaboradorAuditoria();
+
+  const contratosAlertaEntry = batch1['log-contratos-alerta-config'];
+  if(contratosAlertaEntry && contratosAlertaEntry.value){
+    try{
+      const arrSalvo = JSON.parse(contratosAlertaEntry.value);
+      if(Array.isArray(arrSalvo) && arrSalvo[0] && arrSalvo[0].emails){
+        CONTRATOS_ALERTA_EMAILS_STR = arrSalvo[0].emails;
+      }
+    }catch(e){ /* mantém vazio se der erro ao ler */ }
+  }
+  const contratosAlertaInput = document.getElementById('contratosAlertaEmailsInput');
+  if(contratosAlertaInput) contratosAlertaInput.value = CONTRATOS_ALERTA_EMAILS_STR;
 
   renderAllLogs();
 
