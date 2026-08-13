@@ -1185,6 +1185,7 @@
     <button id="opsub-aves" onclick="showView('aves')">Treinamento de aves</button>
     <button id="opsub-armadilhas" onclick="showView('armadilhas')">Armadilhas</button>
     <button id="opsub-auditoria" onclick="showView('auditoria')">Auditoria</button>
+    <button id="opsub-contratos" onclick="showView('contratos')">Contratos</button>
     <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Reconhecimento</button>
   </div>
 
@@ -1273,6 +1274,17 @@
       <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Modelos de armadilha cadastrados aqui viram as opções dos campos "Item / modelo" em Entrada, Saída e Avarias — assim o mesmo modelo é sempre escrito igual e o estoque fecha certo.</p>
       <div id="sub-armadilhas-cadastro-tabela"></div>
     </div>
+  </div>
+
+  <!-- VIEW: CONTRATOS -->
+  <div class="view" id="view-contratos">
+    <div class="module-header">
+      <div>
+        <h2>Contratos</h2>
+        <p>Datas de início/término, valor, responsável e status</p>
+      </div>
+    </div>
+    <div id="sub-contratos-tabela"></div>
   </div>
 
   <!-- VIEW: AUDITORIA (MATRIZ DE ATRIBUIÇÕES) -->
@@ -1852,6 +1864,7 @@ function getTabOptionsList(){
     { id: 'aves', label: 'Operacional › Treinamento de aves' },
     { id: 'armadilhas', label: 'Operacional › Armadilhas' },
     { id: 'auditoria', label: 'Operacional › Auditoria' },
+    { id: 'contratos', label: 'Operacional › Contratos' },
     { id: 'coordenacao', label: 'Operacional II › Checklist veicular' }
   ];
   customTabsRegistry.forEach(t => options.push({ id: t.key, label: t.label }));
@@ -4361,7 +4374,7 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
-const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','reconhecimento'];
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','contratos','reconhecimento'];
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4546,6 +4559,19 @@ const LOG_CONFIGS = {
       {key:'data', label:'Data', type:'date'},
       {key:'responsavel', label:'Responsável', type:'select', get options(){ return Object.keys(AUDITORIA_MATRIZ).sort(); }},
       {key:'descricao', label:'Descrição', type:'textarea'}
+    ]
+  },
+  'contratos': {
+    container:'sub-contratos-tabela',
+    cols:[
+      {key:'cliente', label:'Cliente / Contrato', type:'text'},
+      {key:'empreendimento', label:'Empreendimento', type:'text'},
+      {key:'dataInicio', label:'Início', type:'date'},
+      {key:'dataTermino', label:'Término', type:'date'},
+      {key:'valor', label:'Valor (R$)', type:'number'},
+      {key:'responsavel', label:'Responsável', type:'text'},
+      {key:'status', label:'Status', type:'select', options:['Ativo','Encerrado','Renovado']},
+      {key:'propostaLink', label:'Link da proposta', type:'text'}
     ]
   }
 };
