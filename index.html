@@ -3269,35 +3269,60 @@ const FAUNA_DESEMPENHO_LIMITES = {
   * data LOCAL (não UTC) já usado em pesagemDataFiltro/feedbackDataFiltro. */
 let faunaTecnicoFiltro = {};
 
-/** Mapa de nomes duplicados de técnicos identificado em 16/09/2026: o mesmo
-  * campo livre "responsáveis" tinha o mesmo técnico grafado de formas
-  * diferentes (variação de maiúscula/acento, ou nome completo vs.
-  * abreviado), o que fazia o painel de Desempenho por Técnico contar uma
-  * pessoa como se fossem várias. Cada chave é a grafia normalizada
-  * (minúscula, sem acento, espaços colapsados) e o valor é a grafia
-  * canônica escolhida. Casos semânticos (nomes diferentes p/ mesma
-  * pessoa) foram confirmados um a um com o usuário nessa investigação,
-  * usando co-ocorrência no mesmo registro (nunca ocorreu) e sobreposição
-  * de datas como evidência, nunca suposição:
-  *  - "Matheus" / "Matheus Santos" / "Matheus Silva" -> mesma pessoa (confirmado)
-  *  - "Raian" / "Raian H." / "Raian Henrique" -> mesma pessoa (confirmado)
+/** Mapa de nomes duplicados de técnicos identificado em 16/09/2026 (2 rodadas
+  * de investigação, mesmo dia): o mesmo campo livre "responsáveis" tinha o
+  * mesmo técnico grafado de formas diferentes (variação de maiúscula/acento,
+  * erro de digitação, ou nome completo vs. abreviado), o que fazia o painel
+  * de Desempenho por Técnico contar uma pessoa como se fossem várias. Cada
+  * chave é a grafia normalizada (minúscula, sem acento, espaços colapsados)
+  * e o valor é a grafia canônica escolhida (geralmente a mais frequente na
+  * base, ou a grafia correta quando a diferença é só ortográfica). Casos
+  * semânticos (nomes diferentes p/ mesma pessoa) foram confirmados um a um
+  * com o usuário, usando co-ocorrência no mesmo registro (nunca ocorreu em
+  * nenhum dos casos abaixo) e sobreposição de datas como evidência, nunca
+  * suposição:
+  *  - "Matheus" / "Mateus" (sem H, erro de grafia) / "Matheus Santos" /
+  *    "Matheus Silva" -> mesma pessoa (confirmado). Matheus Santos até
+  *    01/04/2026, Matheus Silva a partir de 02/04/2026: troca de padrão.
+  *  - "Raian" / "Raian H." / "Raiam" (erro de grafia) / "Raian Henrique" ->
+  *    mesma pessoa (confirmado)
   *  - "Fernando" / "Fernando Mendes" -> mesma pessoa (confirmado)
-  *  - "Deivid" / "DEIVID" / "Deivd" (grafias e erro de digitação) -> mesma pessoa (confirmado)
-  *  - "Larissa" / "Larissa Taiane" -> mesma pessoa; os períodos não se
-  *    sobrepõem (Larissa até 26/03/2026, Larissa Taiane a partir de
-  *    02/04/2026), indicando troca de padrão de registro (confirmado)
-  * Os demais (Duílio, Ítalo, Philipe, João, Cristiano) são só variação de
-  * maiúscula/acento da mesma grafia, sem ambiguidade.
+  *  - "Deivid" / "DEIVID" / "Deivd" (grafias e erro de digitação) -> mesma
+  *    pessoa (confirmado)
+  *  - "Larissa" / "Larissa Taiane" -> mesma pessoa; Larissa até 26/03/2026,
+  *    Larissa Taiane a partir de 02/04/2026: troca de padrão (confirmado)
+  *  - "Raí" / "Rai" / "Raí Henrique" / "Rai Henrique" -> mesma pessoa; bare
+  *    até 31/03/2026, "Henrique" a partir de 02/04/2026: troca de padrão
+  *    (confirmado)
+  *  - "Danilo" / "Danilo Fiuza" -> mesma pessoa, períodos se sobrepõem mas
+  *    nunca co-ocorrem no mesmo registro (confirmado)
+  *  - "Rafael" / "Rafael Gomes" -> mesma pessoa, transição quase sem
+  *    sobreposição (confirmado)
+  *  - "Duílio" / "Duilio" / "Duílio Lobo" -> mesma pessoa, é o próprio
+  *    usuário (confirmado)
+  *  - "Tainan" / "Tainan Sousa" -> mesma pessoa (confirmado)
+  *  - "Frederico" / "Frederico Jose" / "Frederico José" -> mesma pessoa,
+  *    transição quase sem sobreposição (confirmado)
+  *  - "Wagner" / "Wágner" / "Wagner Bitencourt" -> mesma pessoa (confirmado)
+  * Os demais (Ítalo, Philipe, João, Cristiano, Tainan, Flavia, Israel,
+  * Vitor, Isaac, Cauã, Márcio, Jéssica, Ronald) são só variação de
+  * maiúscula/acento da mesma grafia, sem ambiguidade -- achados numa
+  * varredura geral de duplicatas exatas na base inteira, não apenas nos
+  * nomes citados pelo usuário.
   * Casos de 1 ocorrência como "Fernando de Raian", "Talisson Raian" e
   * "Deivid 3 Larissa" parecem ser dois técnicos lançados numa única
-  * célula sem separador reconhecido -- não foram mesclados aqui por
-  * serem ambíguos; precisam de correção na planilha de origem. */
+  * célula sem separador reconhecido -- não foram mesclados aqui, ver
+  * FAUNA_CELULA_DOIS_TECNICOS abaixo. "Weudes" e "Felipe Silva" (1
+  * ocorrência cada) não têm evidência de serem duplicatas de ninguém e
+  * foram mantidos como estão. */
 const FAUNA_TECNICO_CANONICAL = {
   'matheus': 'Matheus Silva',
+  'mateus': 'Matheus Silva',
   'matheus santos': 'Matheus Silva',
   'matheus silva': 'Matheus Silva',
   'raian': 'Raian Henrique',
   'raian h.': 'Raian Henrique',
+  'raiam': 'Raian Henrique',
   'raian henrique': 'Raian Henrique',
   'fernando': 'Fernando Mendes',
   'fernando mendes': 'Fernando Mendes',
@@ -3305,11 +3330,32 @@ const FAUNA_TECNICO_CANONICAL = {
   'deivd': 'Deivid',
   'larissa': 'Larissa Taiane',
   'larissa taiane': 'Larissa Taiane',
+  'rai': 'Raí Henrique',
+  'rai henrique': 'Raí Henrique',
+  'danilo': 'Danilo Fiuza',
+  'danilo fiuza': 'Danilo Fiuza',
+  'rafael': 'Rafael Gomes',
+  'rafael gomes': 'Rafael Gomes',
   'duilio': 'Duílio',
+  'duilio lobo': 'Duílio',
+  'tainan': 'Tainan',
+  'tainan sousa': 'Tainan',
+  'frederico': 'Frederico José',
+  'frederico jose': 'Frederico José',
+  'wagner': 'Wagner',
+  'wagner bitencourt': 'Wagner',
   'italo': 'Ítalo',
   'philipe': 'Philipe',
   'joao': 'João',
-  'cristiano': 'Cristiano'
+  'cristiano': 'Cristiano',
+  'flavia': 'Flavia',
+  'israel': 'Israel',
+  'vitor': 'Vitor',
+  'isaac': 'Isaac',
+  'caua': 'Cauã',
+  'marcio': 'Márcio',
+  'jessica': 'Jéssica',
+  'ronald': 'Ronald'
 };
 
 /** Normaliza um nome para comparação: minúsculas, sem acento, espaços
