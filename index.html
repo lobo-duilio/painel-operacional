@@ -3331,19 +3331,41 @@ function canonicalizarNomeTecnico(nome){
   return FAUNA_TECNICO_CANONICAL[chave] || nome.trim();
 }
 
+/** Casos confirmados com o usuário em 16/09/2026 onde uma única célula do
+  * campo "responsáveis" juntava DOIS técnicos sem separador reconhecido
+  * (nem vírgula, nem " e ") -- ex.: "Fernando de Raian" (usa "de" em vez de
+  * "e"), "Talisson Raian" (sem separador nenhum), "Deivid 3 Larissa" e
+  * "Raí 3 Deivid"/"Raí Deivid" (usam "3" no lugar de "e"). Confirmado que
+  * são dois técnicos, não uma pessoa só com nome composto. Chave é a
+  * grafia normalizada (ver normalizarChaveTecnico) do texto inteiro da
+  * célula; valor é a lista dos dois nomes reais, que passam depois pelo
+  * mesmo canonicalizarNomeTecnico de sempre. */
+const FAUNA_CELULA_DOIS_TECNICOS = {
+  'fernando de raian': ['Fernando', 'Raian'],
+  'talisson raian': ['Talisson', 'Raian'],
+  'deivid 3 larissa': ['Deivid', 'Larissa'],
+  'rai 3 deivid': ['Raí', 'Deivid'],
+  'rai deivid': ['Raí', 'Deivid'],
+  'matheus fernando': ['Matheus', 'Fernando'],
+  'matheus tainan': ['Matheus', 'Tainan']
+};
+
 /** Separa nomes do campo de texto livre "responsáveis". Levantamento feito
   * em 16/09/2026 na base real (14.105 registros da aba de fauna) mostrou
   * que o campo segue o padrão de lista em português -- vírgula entre
   * nomes e " e " antes do último ("Fulano, Ciclano e Beltrano"): 5.955
   * ocorrências de " e " e 576 de vírgula, sem uso relevante de outro
-  * separador. Retorna a lista de nomes (sem vazios), já com a grafia
-  * canonicalizada -- ver FAUNA_TECNICO_CANONICAL acima. */
+  * separador. Depois do split normal, expande os casos de
+  * FAUNA_CELULA_DOIS_TECNICOS (célula com dois nomes sem separador) e só
+  * então aplica a grafia canônica -- ver FAUNA_TECNICO_CANONICAL acima.
+  * Retorna a lista de nomes (sem vazios). */
 function splitResponsaveisFauna(str){
   return String(str||'')
     .split(',')
     .reduce((acc, parte) => acc.concat(parte.split(/\se\s/i)), [])
     .map(s => s.trim())
     .filter(Boolean)
+    .reduce((acc, nome) => acc.concat(FAUNA_CELULA_DOIS_TECNICOS[normalizarChaveTecnico(nome)] || [nome]), [])
     .map(canonicalizarNomeTecnico);
 }
 
