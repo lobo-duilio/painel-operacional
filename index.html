@@ -3231,22 +3231,43 @@ function gerarRelatorioFauna(tabKey){
 
 /* ---------------------------------------------------------------------
    DESEMPENHO POR TÉCNICO (aba de fauna) — quem está capturando o
-   suficiente no dia, considerando só captura/remoção efetiva (não
-   afugentamento). Definições confirmadas com o usuário em 16/09/2026:
-   - Unidade: soma de indivíduos capturados no dia (não nº de registros).
+   suficiente no período, considerando só captura/remoção efetiva (não
+   afugentamento). Definições de negócio confirmadas com o usuário:
+   - Unidade: soma de indivíduos capturados no período (não nº de registros).
    - Métodos que contam como captura: falcoaria, armadilha, manual,
      retirada_ovos, eliminacao_direta, puca. Afugentamento NUNCA conta.
    - Quando um registro lista mais de um responsável, cada um recebe
      crédito integral pelo total do registro (não divide).
    - "Técnico" = qualquer nome que aparece no campo responsáveis.
-   - Nível aceitável: de 1 a 10 capturas no dia. 0 = sem produção.
-     Acima de 10 = acima do esperado (positivo, não é problema).
+   - Período selecionável: dia, mês ou ano; e opcionalmente restrito a um
+     empreendimento específico (mesmo filtro já usado no Relatório de
+     Fauna: campo r.local||r.empreendimento, catálogo de nomes em
+     logData[tabKey+'-empreendimentos']).
+   - Faixas de "aceitável" confirmadas com o usuário em 16/09/2026 —
+     diferentes por tipo de período, porque o volume esperado muda:
+       dia:  1  a 10
+       mês:  8  a 30
+       ano:  90 a 160
+     0 capturas = "Sem produção". De 1 até o mínimo-1 = "Abaixo do
+     esperado" (produziu algo, mas fica aquém do piso esperado — categoria
+     própria, confirmada com o usuário, distinta de quem não produziu
+     nada). Acima do máximo = "Acima do esperado" (positivo, não é
+     problema).
    --------------------------------------------------------------------- */
 
-/** Data escolhida no seletor de cada aba de fauna (chave = tabKey; ausente
-  * = ainda não escolheu, usa hoje por padrão). Mesmo padrão de
-  * pesagemDataFiltro/feedbackDataFiltro: data LOCAL, não UTC. */
-let faunaTecnicoDataFiltro = {};
+/** Limites de aceitável por tipo de período (ver definição de negócio acima). */
+const FAUNA_DESEMPENHO_LIMITES = {
+  dia: { min: 1, max: 10 },
+  mes: { min: 8, max: 30 },
+  ano: { min: 90, max: 160 }
+};
+
+/** Filtro escolhido em cada aba de fauna (chave = tabKey). tipo: 'dia'|'mes'|'ano'.
+  * dia/mes/ano guardam o valor bruto do respectivo <input> para aquele tipo
+  * (ausente = ainda não escolheu, usa o período atual por padrão). emp:
+  * nome do empreendimento escolhido, ou '' para todos. Mesmo cuidado de
+  * data LOCAL (não UTC) já usado em pesagemDataFiltro/feedbackDataFiltro. */
+let faunaTecnicoFiltro = {};
 
 /** Separa nomes do campo de texto livre "responsáveis". Levantamento feito
   * em 16/09/2026 na base real (14.105 registros da aba de fauna) mostrou
@@ -3271,32 +3292,69 @@ function totalCapturasFauna(registro){
     .reduce((acc, m) => acc + (parseFloat(registro[m]) || 0), 0);
 }
 
-/** Classifica o total de capturas de um técnico num dia. */
-function classificarDesempenhoTecnico(total){
+/** Classifica o total de capturas de um técnico num período, usando os
+  * limites de aceitável daquele tipo de período (FAUNA_DESEMPENHO_LIMITES). */
+function classificarDesempenhoTecnico(total, tipo){
+  const lim = FAUNA_DESEMPENHO_LIMITES[tipo] || FAUNA_DESEMPENHO_LIMITES.dia;
   if (total <= 0) return { label: 'Sem produção', cor: 'var(--red)', corFundo: 'var(--red-light)' };
-  if (total <= 10) return { label: 'Aceitável', cor: 'var(--sage)', corFundo: 'var(--sage-light)' };
+  if (total < lim.min) return { label: 'Abaixo do esperado', cor: 'var(--amber)', corFundo: 'var(--amber-light)' };
+  if (total <= lim.max) return { label: 'Aceitável', cor: 'var(--sage)', corFundo: 'var(--sage-light)' };
   return { label: 'Acima do esperado', cor: 'var(--steel)', corFundo: 'var(--steel-light)' };
 }
 
-/** Painel "Desempenho por Técnico" de uma aba de fauna: mostra, para o dia
-  * escolhido (hoje por padrão), quanto cada técnico capturou e se está no
-  * nível aceitável. Recalcula sempre a partir dos dados já carregados em
+/** Data/mês/ano "atual" no fuso local (nunca toISOString -- mesmo cuidado já
+  * documentado em pesagemDataFiltro/feedbackDataFiltro: toISOString em UTC
+  * pode voltar o dia anterior depois de ~21h em Salvador). */
+function faunaPeriodoAtual(tipo){
+  const agora = new Date();
+  const yyyy = agora.getFullYear();
+  const mm = String(agora.getMonth() + 1).padStart(2, '0');
+  const dd = String(agora.getDate()).padStart(2, '0');
+  if(tipo === 'mes') return yyyy + '-' + mm;
+  if(tipo === 'ano') return String(yyyy);
+  return yyyy + '-' + mm + '-' + dd;
+}
+
+/** Painel "Desempenho por Técnico" de uma aba de fauna: mostra, para o
+  * período e empreendimento escolhidos (período atual e "todos os
+  * empreendimentos" por padrão), quanto cada técnico capturou e em que
+  * faixa está. Recalcula sempre a partir dos dados já carregados em
   * logData -- como refreshFaunaData busca a planilha de novo a cada troca
   * de sub-aba, o painel reflete a base ao vivo sempre que é aberto. */
 function renderFaunaDesempenhoTecnicos(tabKey){
   const container = document.getElementById('sub-' + tabKey + '-desempenho-tecnicos');
   if(!container) return;
 
-  const agora = new Date();
-  const hojeStr = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
-  if(!faunaTecnicoDataFiltro[tabKey]) faunaTecnicoDataFiltro[tabKey] = hojeStr;
-  const diaFiltro = faunaTecnicoDataFiltro[tabKey];
+  if(!faunaTecnicoFiltro[tabKey]) faunaTecnicoFiltro[tabKey] = { tipo: 'dia' };
+  const filtro = faunaTecnicoFiltro[tabKey];
+  const tipo = filtro.tipo || 'dia';
+  const valorAtual = faunaPeriodoAtual(tipo);
+  if(!filtro[tipo]) filtro[tipo] = valorAtual;
+  const valorFiltro = filtro[tipo];
+  const empFiltro = filtro.emp || '';
+  const ehPeriodoAtual = valorFiltro === valorAtual;
 
-  const partesData = diaFiltro.split('-');
-  const dataFormatada = partesData.length === 3 ? (partesData[2] + '/' + partesData[1] + '/' + partesData[0]) : diaFiltro;
-  const ehHoje = diaFiltro === hojeStr;
+  const rotuloPeriodo = (function(){
+    if(tipo === 'dia'){
+      const p = valorFiltro.split('-');
+      return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : valorFiltro;
+    }
+    if(tipo === 'mes'){
+      const p = valorFiltro.split('-');
+      return p.length === 2 ? (p[1] + '/' + p[0]) : valorFiltro;
+    }
+    return valorFiltro;
+  })();
 
-  const registros = (logData[tabKey + '-registros'] || []).filter(r => String(r.data||'').split('T')[0] === diaFiltro);
+  const registros = (logData[tabKey + '-registros'] || []).filter(r => {
+    const d = String(r.data||'').split('T')[0];
+    if(!d) return false;
+    if(tipo === 'dia' && d !== valorFiltro) return false;
+    if(tipo === 'mes' && d.slice(0,7) !== valorFiltro) return false;
+    if(tipo === 'ano' && d.slice(0,4) !== valorFiltro) return false;
+    if(empFiltro && (r.local||r.empreendimento||'').trim().toLowerCase() !== empFiltro.trim().toLowerCase()) return false;
+    return true;
+  });
 
   const porTecnico = {};
   registros.forEach(r => {
@@ -3308,18 +3366,40 @@ function renderFaunaDesempenhoTecnicos(tabKey){
     });
   });
 
+  const empreendimentos = (logData[tabKey + '-empreendimentos'] || []).map(e => e.nome).filter(Boolean).sort((a,b) => a.localeCompare(b,'pt-BR'));
+  const empOptionsHtml = '<option value="">Todos os empreendimentos</option>' + empreendimentos.map(n => `<option value="${escapeHtml(n)}" ${n===empFiltro?'selected':''}>${escapeHtml(n)}</option>`).join('');
+
+  const tipoOptionsHtml = [['dia','Dia'],['mes','Mês'],['ano','Ano']].map(([v,l]) =>
+    `<option value="${v}" ${v===tipo?'selected':''}>${l}</option>`
+  ).join('');
+
+  const inputPeriodoHtml = tipo === 'dia'
+    ? `<input type="date" value="${valorFiltro}" max="${faunaPeriodoAtual('dia')}" onchange="faunaTecnicoFiltro['${tabKey}'].dia=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">`
+    : tipo === 'mes'
+      ? `<input type="month" value="${valorFiltro}" max="${faunaPeriodoAtual('mes')}" onchange="faunaTecnicoFiltro['${tabKey}'].mes=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">`
+      : `<input type="number" value="${valorFiltro}" max="${faunaPeriodoAtual('ano')}" min="2000" step="1" onchange="faunaTecnicoFiltro['${tabKey}'].ano=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;width:90px;">`;
+
   const seletorHtml = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Ver desempenho de:</label>
-      <input type="date" value="${diaFiltro}" max="${hojeStr}" onchange="faunaTecnicoDataFiltro['${tabKey}']=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
-      ${!ehHoje ? `<button class="btn small" onclick="faunaTecnicoDataFiltro['${tabKey}']=null;renderFaunaDesempenhoTecnicos('${tabKey}');">Voltar para hoje</button>` : ''}
+      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Ver desempenho por:</label>
+      <select onchange="faunaTecnicoFiltro['${tabKey}'].tipo=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+        ${tipoOptionsHtml}
+      </select>
+      ${inputPeriodoHtml}
+      ${!ehPeriodoAtual ? `<button class="btn small" onclick="faunaTecnicoFiltro['${tabKey}'].${tipo}=null;renderFaunaDesempenhoTecnicos('${tabKey}');">Voltar para ${tipo === 'dia' ? 'hoje' : tipo === 'mes' ? 'este mês' : 'este ano'}</button>` : ''}
+      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-left:6px;">Empreendimento:</label>
+      <select onchange="faunaTecnicoFiltro['${tabKey}'].emp=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+        ${empOptionsHtml}
+      </select>
     </div>
   `;
 
+  const lim = FAUNA_DESEMPENHO_LIMITES[tipo];
+  const rotuloTipo = tipo === 'dia' ? 'dia' : (tipo === 'mes' ? 'mês' : 'ano');
   const explicacaoHtml = `
     <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">
       Considera só capturas/remoções efetivas (falcoaria, armadilha, manual, retirada de ovos, eliminação direta, puçá) —
-      afugentamento não entra na conta. Nível aceitável: de 1 a 10 capturas no dia; acima de 10 é acima do esperado.
+      afugentamento não entra na conta. Faixa aceitável por ${rotuloTipo}: de ${lim.min} a ${lim.max} capturas.
       Quando um registro lista mais de um responsável, cada um recebe o total inteiro do registro.
     </p>
   `;
@@ -3332,27 +3412,29 @@ function renderFaunaDesempenhoTecnicos(tabKey){
         <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Desempenho por técnico</div>
         ${seletorHtml}
         ${explicacaoHtml}
-        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum registro ${ehHoje ? 'hoje' : ('em ' + dataFormatada)} ainda.</p>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum registro em ${rotuloPeriodo}${empFiltro ? (' · ' + escapeHtml(empFiltro)) : ''} ainda.</p>
       </div>`;
     return;
   }
 
   const semProducao = nomes.filter(n => porTecnico[n].capturas <= 0).length;
-  const aceitavel = nomes.filter(n => porTecnico[n].capturas > 0 && porTecnico[n].capturas <= 10).length;
-  const acimaEsperado = nomes.filter(n => porTecnico[n].capturas > 10).length;
+  const abaixoEsperado = nomes.filter(n => porTecnico[n].capturas > 0 && porTecnico[n].capturas < lim.min).length;
+  const aceitavel = nomes.filter(n => porTecnico[n].capturas >= lim.min && porTecnico[n].capturas <= lim.max).length;
+  const acimaEsperado = nomes.filter(n => porTecnico[n].capturas > lim.max).length;
 
   const statsHtml = `
     <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:14px;">
       <div class="stat total"><div class="num">${nomes.length}</div><div class="lbl">Técnicos com registro</div></div>
-      <div class="stat s-concl"><div class="num">${aceitavel}</div><div class="lbl">Nível aceitável (1-10)</div></div>
-      <div class="stat s-exec"><div class="num">${acimaEsperado}</div><div class="lbl">Acima do esperado (&gt;10)</div></div>
+      <div class="stat s-concl"><div class="num">${aceitavel}</div><div class="lbl">Aceitável (${lim.min}-${lim.max})</div></div>
+      <div class="stat s-exec"><div class="num">${acimaEsperado}</div><div class="lbl">Acima do esperado (&gt;${lim.max})</div></div>
+      <div class="stat s-plan"><div class="num">${abaixoEsperado}</div><div class="lbl">Abaixo do esperado (1-${lim.min-1})</div></div>
       <div class="stat s-atraso"><div class="num">${semProducao}</div><div class="lbl">Sem produção (0)</div></div>
     </div>
   `;
 
   const cardsHtml = nomes.map(nome => {
     const dado = porTecnico[nome];
-    const status = classificarDesempenhoTecnico(dado.capturas);
+    const status = classificarDesempenhoTecnico(dado.capturas, tipo);
     return `
       <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${status.cor};border-radius:8px;padding:10px 12px;min-width:170px;flex:1 1 170px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
@@ -3369,13 +3451,14 @@ function renderFaunaDesempenhoTecnicos(tabKey){
 
   container.innerHTML = `
     <div class="logtable-wrap" style="margin-bottom:14px;">
-      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Desempenho por técnico ${ehHoje ? 'de hoje' : 'de ' + dataFormatada}</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Desempenho por técnico — ${rotuloPeriodo}${ehPeriodoAtual ? (tipo==='dia'?' (hoje)':tipo==='mes'?' (mês atual)':' (ano atual)') : ''}${empFiltro ? (' · ' + escapeHtml(empFiltro)) : ''}</div>
       ${seletorHtml}
       ${explicacaoHtml}
       ${statsHtml}
       <div style="display:flex;flex-wrap:wrap;gap:10px;">${cardsHtml}</div>
     </div>`;
 }
+
 
 let diarioTabBaseKeys = [];
 
