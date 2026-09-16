@@ -2804,7 +2804,7 @@ function mountFaunaTab(tabDef){
       '<button class="active" onclick="showSub(\'' + tabDef.key + '\',\'registros\');refreshFaunaData(\'' + tabDef.key + '\')">Registros</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'empreendimentos\');refreshFaunaData(\'' + tabDef.key + '\')">Empreendimentos</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'especies\');refreshFaunaData(\'' + tabDef.key + '\')">Espécies</button>' +
-      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');(async()=>{await refreshFaunaData(\'' + tabDef.key + '\');popularFaunaRelatorio(\'' + tabDef.key + '\');})()">Relatório</button>' +
+      '<button onclick="showSub(\'' + tabDef.key + '\',\'relatorio\');(async()=>{await refreshFaunaData(\'' + tabDef.key + '\');popularFaunaRelatorio(\'' + tabDef.key + '\');})()">Relatório</button>' + '<button onclick="showSub(\'' + tabDef.key + '\',\'desempenho-tecnicos\');refreshFaunaData(\'' + tabDef.key + '\')">Desempenho por Técnico</button>' +
       '<button onclick="showSub(\'' + tabDef.key + '\',\'historico-relatorios\');refreshFaunaData(\'' + tabDef.key + '\')">Histórico de relatórios</button>' +
     '</div>' +
     '<div class="subview active" id="sub-' + tabDef.key + '-registros"></div>' +
@@ -2814,7 +2814,7 @@ function mountFaunaTab(tabDef){
       buildFaunaRelatorioFormHtml(tabDef.key) +
       '<div id="faunaRelatorioResultado-' + tabDef.key + '"></div>' +
     '</div>' +
-    '<div class="subview" id="sub-' + tabDef.key + '-historico-relatorios"></div>';
+    '<div class="subview" id="sub-' + tabDef.key + '-desempenho-tecnicos"></div>' + '<div class="subview" id="sub-' + tabDef.key + '-historico-relatorios"></div>';
   wrap.appendChild(view);
 }
 
@@ -2841,7 +2841,7 @@ async function refreshFaunaData(tabKey){
     logData[tabKey + '-historico-relatorios'] = parseEntry(batch['log-' + tabKey + '-historico-relatorios']);
     renderFaunaRegistros(tabKey);
     renderLogTable(tabKey + '-empreendimentos');
-    renderLogTable(tabKey + '-especies');
+    renderLogTable(tabKey + '-especies'); renderFaunaDesempenhoTecnicos(tabKey);
     renderFaunaHistorico(tabKey);
   } catch(e) {
     alert('Não foi possível atualizar os dados: ' + (e.message || e));
@@ -3227,6 +3227,154 @@ function gerarRelatorioFauna(tabKey){
       </div>
     </div>
   `;
+}
+
+/* ---------------------------------------------------------------------
+   DESEMPENHO POR TÉCNICO (aba de fauna) — quem está capturando o
+   suficiente no dia, considerando só captura/remoção efetiva (não
+   afugentamento). Definições confirmadas com o usuário em 16/09/2026:
+   - Unidade: soma de indivíduos capturados no dia (não nº de registros).
+   - Métodos que contam como captura: falcoaria, armadilha, manual,
+     retirada_ovos, eliminacao_direta, puca. Afugentamento NUNCA conta.
+   - Quando um registro lista mais de um responsável, cada um recebe
+     crédito integral pelo total do registro (não divide).
+   - "Técnico" = qualquer nome que aparece no campo responsáveis.
+   - Nível aceitável: de 1 a 10 capturas no dia. 0 = sem produção.
+     Acima de 10 = acima do esperado (positivo, não é problema).
+   --------------------------------------------------------------------- */
+
+/** Data escolhida no seletor de cada aba de fauna (chave = tabKey; ausente
+  * = ainda não escolheu, usa hoje por padrão). Mesmo padrão de
+  * pesagemDataFiltro/feedbackDataFiltro: data LOCAL, não UTC. */
+let faunaTecnicoDataFiltro = {};
+
+/** Separa nomes do campo de texto livre "responsáveis". Levantamento feito
+  * em 16/09/2026 na base real (14.105 registros da aba de fauna) mostrou
+  * que o campo segue o padrão de lista em português -- vírgula entre
+  * nomes e " e " antes do último ("Fulano, Ciclano e Beltrano"): 5.955
+  * ocorrências de " e " e 576 de vírgula, sem uso relevante de outro
+  * separador. Retorna a lista de nomes (sem vazios). */
+function splitResponsaveisFauna(str){
+  return String(str||'')
+    .split(',')
+    .reduce((acc, parte) => acc.concat(parte.split(/\se\s/i)), [])
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/** Soma só os métodos de captura/remoção efetiva de um registro de fauna,
+  * excluindo "afugentamento" de propósito (dispersão sem captura --
+  * definição de negócio confirmada com o usuário: afugentamento não
+  * conta como ação de captura, é categoria separada). */
+function totalCapturasFauna(registro){
+  return FAUNA_METODOS.filter(m => m !== 'afugentamento')
+    .reduce((acc, m) => acc + (parseFloat(registro[m]) || 0), 0);
+}
+
+/** Classifica o total de capturas de um técnico num dia. */
+function classificarDesempenhoTecnico(total){
+  if (total <= 0) return { label: 'Sem produção', cor: 'var(--red)', corFundo: 'var(--red-light)' };
+  if (total <= 10) return { label: 'Aceitável', cor: 'var(--sage)', corFundo: 'var(--sage-light)' };
+  return { label: 'Acima do esperado', cor: 'var(--steel)', corFundo: 'var(--steel-light)' };
+}
+
+/** Painel "Desempenho por Técnico" de uma aba de fauna: mostra, para o dia
+  * escolhido (hoje por padrão), quanto cada técnico capturou e se está no
+  * nível aceitável. Recalcula sempre a partir dos dados já carregados em
+  * logData -- como refreshFaunaData busca a planilha de novo a cada troca
+  * de sub-aba, o painel reflete a base ao vivo sempre que é aberto. */
+function renderFaunaDesempenhoTecnicos(tabKey){
+  const container = document.getElementById('sub-' + tabKey + '-desempenho-tecnicos');
+  if(!container) return;
+
+  const agora = new Date();
+  const hojeStr = agora.getFullYear() + '-' + String(agora.getMonth() + 1).padStart(2, '0') + '-' + String(agora.getDate()).padStart(2, '0');
+  if(!faunaTecnicoDataFiltro[tabKey]) faunaTecnicoDataFiltro[tabKey] = hojeStr;
+  const diaFiltro = faunaTecnicoDataFiltro[tabKey];
+
+  const partesData = diaFiltro.split('-');
+  const dataFormatada = partesData.length === 3 ? (partesData[2] + '/' + partesData[1] + '/' + partesData[0]) : diaFiltro;
+  const ehHoje = diaFiltro === hojeStr;
+
+  const registros = (logData[tabKey + '-registros'] || []).filter(r => String(r.data||'').split('T')[0] === diaFiltro);
+
+  const porTecnico = {};
+  registros.forEach(r => {
+    const capturas = totalCapturasFauna(r);
+    splitResponsaveisFauna(r.responsaveis).forEach(nome => {
+      if(!porTecnico[nome]) porTecnico[nome] = { capturas: 0, visitas: 0 };
+      porTecnico[nome].capturas += capturas;
+      porTecnico[nome].visitas += 1;
+    });
+  });
+
+  const seletorHtml = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:12px;font-weight:600;color:var(--ink-soft);">Ver desempenho de:</label>
+      <input type="date" value="${diaFiltro}" max="${hojeStr}" onchange="faunaTecnicoDataFiltro['${tabKey}']=this.value;renderFaunaDesempenhoTecnicos('${tabKey}');" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;">
+      ${!ehHoje ? `<button class="btn small" onclick="faunaTecnicoDataFiltro['${tabKey}']=null;renderFaunaDesempenhoTecnicos('${tabKey}');">Voltar para hoje</button>` : ''}
+    </div>
+  `;
+
+  const explicacaoHtml = `
+    <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">
+      Considera só capturas/remoções efetivas (falcoaria, armadilha, manual, retirada de ovos, eliminação direta, puçá) —
+      afugentamento não entra na conta. Nível aceitável: de 1 a 10 capturas no dia; acima de 10 é acima do esperado.
+      Quando um registro lista mais de um responsável, cada um recebe o total inteiro do registro.
+    </p>
+  `;
+
+  const nomes = Object.keys(porTecnico).sort((a,b) => porTecnico[b].capturas - porTecnico[a].capturas);
+
+  if(nomes.length === 0){
+    container.innerHTML = `
+      <div class="logtable-wrap">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Desempenho por técnico</div>
+        ${seletorHtml}
+        ${explicacaoHtml}
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">Nenhum registro ${ehHoje ? 'hoje' : ('em ' + dataFormatada)} ainda.</p>
+      </div>`;
+    return;
+  }
+
+  const semProducao = nomes.filter(n => porTecnico[n].capturas <= 0).length;
+  const aceitavel = nomes.filter(n => porTecnico[n].capturas > 0 && porTecnico[n].capturas <= 10).length;
+  const acimaEsperado = nomes.filter(n => porTecnico[n].capturas > 10).length;
+
+  const statsHtml = `
+    <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:14px;">
+      <div class="stat total"><div class="num">${nomes.length}</div><div class="lbl">Técnicos com registro</div></div>
+      <div class="stat s-concl"><div class="num">${aceitavel}</div><div class="lbl">Nível aceitável (1-10)</div></div>
+      <div class="stat s-exec"><div class="num">${acimaEsperado}</div><div class="lbl">Acima do esperado (&gt;10)</div></div>
+      <div class="stat s-atraso"><div class="num">${semProducao}</div><div class="lbl">Sem produção (0)</div></div>
+    </div>
+  `;
+
+  const cardsHtml = nomes.map(nome => {
+    const dado = porTecnico[nome];
+    const status = classificarDesempenhoTecnico(dado.capturas);
+    return `
+      <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${status.cor};border-radius:8px;padding:10px 12px;min-width:170px;flex:1 1 170px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
+          <strong style="font-size:13px;">${escapeHtml(nome)}</strong>
+          <span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:${status.corFundo};color:${status.cor};white-space:nowrap;">${status.label}</span>
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);line-height:1.6;">
+          Capturas: <strong style="color:var(--navy);">${dado.capturas}</strong><br>
+          Visitas com registro: ${dado.visitas}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="logtable-wrap" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">Desempenho por técnico ${ehHoje ? 'de hoje' : 'de ' + dataFormatada}</div>
+      ${seletorHtml}
+      ${explicacaoHtml}
+      ${statsHtml}
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">${cardsHtml}</div>
+    </div>`;
 }
 
 let diarioTabBaseKeys = [];
@@ -4439,7 +4587,7 @@ function showSub(module, name){
   }
   if(faunaTabBaseKeys.indexOf(module) !== -1){
     if(name === 'registros') renderFaunaRegistros(module);
-    else if(name === 'relatorio') popularFaunaRelatorio(module);
+    else if(name === 'relatorio') popularFaunaRelatorio(module); else if(name === 'desempenho-tecnicos') renderFaunaDesempenhoTecnicos(module);
   }
   if(stockTabBaseKeys.indexOf(module) !== -1){
     if(name === 'estoque') renderStockEstoque(module);
