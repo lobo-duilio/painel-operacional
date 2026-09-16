@@ -3269,18 +3269,82 @@ const FAUNA_DESEMPENHO_LIMITES = {
   * data LOCAL (não UTC) já usado em pesagemDataFiltro/feedbackDataFiltro. */
 let faunaTecnicoFiltro = {};
 
+/** Mapa de nomes duplicados de técnicos identificado em 16/09/2026: o mesmo
+  * campo livre "responsáveis" tinha o mesmo técnico grafado de formas
+  * diferentes (variação de maiúscula/acento, ou nome completo vs.
+  * abreviado), o que fazia o painel de Desempenho por Técnico contar uma
+  * pessoa como se fossem várias. Cada chave é a grafia normalizada
+  * (minúscula, sem acento, espaços colapsados) e o valor é a grafia
+  * canônica escolhida. Casos semânticos (nomes diferentes p/ mesma
+  * pessoa) foram confirmados um a um com o usuário nessa investigação,
+  * usando co-ocorrência no mesmo registro (nunca ocorreu) e sobreposição
+  * de datas como evidência, nunca suposição:
+  *  - "Matheus" / "Matheus Santos" / "Matheus Silva" -> mesma pessoa (confirmado)
+  *  - "Raian" / "Raian H." / "Raian Henrique" -> mesma pessoa (confirmado)
+  *  - "Fernando" / "Fernando Mendes" -> mesma pessoa (confirmado)
+  *  - "Deivid" / "DEIVID" / "Deivd" (grafias e erro de digitação) -> mesma pessoa (confirmado)
+  *  - "Larissa" / "Larissa Taiane" -> mesma pessoa; os períodos não se
+  *    sobrepõem (Larissa até 26/03/2026, Larissa Taiane a partir de
+  *    02/04/2026), indicando troca de padrão de registro (confirmado)
+  * Os demais (Duílio, Ítalo, Philipe, João, Cristiano) são só variação de
+  * maiúscula/acento da mesma grafia, sem ambiguidade.
+  * Casos de 1 ocorrência como "Fernando de Raian", "Talisson Raian" e
+  * "Deivid 3 Larissa" parecem ser dois técnicos lançados numa única
+  * célula sem separador reconhecido -- não foram mesclados aqui por
+  * serem ambíguos; precisam de correção na planilha de origem. */
+const FAUNA_TECNICO_CANONICAL = {
+  'matheus': 'Matheus Silva',
+  'matheus santos': 'Matheus Silva',
+  'matheus silva': 'Matheus Silva',
+  'raian': 'Raian Henrique',
+  'raian h.': 'Raian Henrique',
+  'raian henrique': 'Raian Henrique',
+  'fernando': 'Fernando Mendes',
+  'fernando mendes': 'Fernando Mendes',
+  'deivid': 'Deivid',
+  'deivd': 'Deivid',
+  'larissa': 'Larissa Taiane',
+  'larissa taiane': 'Larissa Taiane',
+  'duilio': 'Duílio',
+  'italo': 'Ítalo',
+  'philipe': 'Philipe',
+  'joao': 'João',
+  'cristiano': 'Cristiano'
+};
+
+/** Normaliza um nome para comparação: minúsculas, sem acento, espaços
+  * colapsados. Usada só como CHAVE de busca em FAUNA_TECNICO_CANONICAL --
+  * o valor exibido continua sendo a grafia canônica definida no mapa. */
+function normalizarChaveTecnico(s){
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Resolve a grafia canônica de um nome de técnico, se houver mapeamento
+  * conhecido em FAUNA_TECNICO_CANONICAL; caso contrário devolve o nome
+  * original (só com espaços nas pontas removidos). */
+function canonicalizarNomeTecnico(nome){
+  const chave = normalizarChaveTecnico(nome);
+  return FAUNA_TECNICO_CANONICAL[chave] || nome.trim();
+}
+
 /** Separa nomes do campo de texto livre "responsáveis". Levantamento feito
   * em 16/09/2026 na base real (14.105 registros da aba de fauna) mostrou
   * que o campo segue o padrão de lista em português -- vírgula entre
   * nomes e " e " antes do último ("Fulano, Ciclano e Beltrano"): 5.955
   * ocorrências de " e " e 576 de vírgula, sem uso relevante de outro
-  * separador. Retorna a lista de nomes (sem vazios). */
+  * separador. Retorna a lista de nomes (sem vazios), já com a grafia
+  * canonicalizada -- ver FAUNA_TECNICO_CANONICAL acima. */
 function splitResponsaveisFauna(str){
   return String(str||'')
     .split(',')
     .reduce((acc, parte) => acc.concat(parte.split(/\se\s/i)), [])
     .map(s => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(canonicalizarNomeTecnico);
 }
 
 /** Soma só os métodos de captura/remoção efetiva de um registro de fauna,
