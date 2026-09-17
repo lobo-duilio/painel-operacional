@@ -6677,7 +6677,7 @@ async function excluirAuditoria(id){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
-  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz', 'log-contratos-alerta-config'];
+  const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz', 'log-contratos-alerta-config', 'log-custom-dimensionamento-controles'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
   let batch1;
