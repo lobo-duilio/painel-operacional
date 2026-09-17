@@ -1187,6 +1187,7 @@
     <button id="opsub-auditoria" onclick="showView('auditoria')">Auditoria</button>
     <button id="opsub-contratos" onclick="showView('contratos')">Contratos</button>
     <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Reconhecimento</button>
+    <button id="opsub-dimensionamento" onclick="showView('dimensionamento')">Dimensionamento de Equipe</button>
   </div>
 
   <!-- VIEW: PAINEL GERAL (Atividades) -->
@@ -1399,7 +1400,40 @@
     </div>
   </div>
 
-  <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
+  <!-- VIEW: DIMENSIONAMENTO DE EQUIPE -->
+  <div class="view" id="view-dimensionamento">
+    <div class="module-header">
+      <div>
+        <h2>Dimensionamento de Equipe</h2>
+        <p>Estimativa simplificada de carga de trabalho por técnico, com base no framework de dimensionamento elaborado pela Diretoria. Calculadora ao vivo — não guarda histórico.</p>
+      </div>
+    </div>
+    <div class="logtable-wrap" style="max-width:520px;margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;">Dados de entrada</div>
+      <div style="display:grid;gap:16px;">
+        <label style="font-size:12px;color:var(--ink-soft);font-weight:600;">
+          Controles ativos
+          <input type="number" min="0" step="1" id="dimControles" value="17" oninput="renderDimensionamentoPainel()"
+            style="display:block;width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:400;color:var(--ink);">
+        </label>
+        <label style="font-size:12px;color:var(--ink-soft);font-weight:600;">
+          Dias de atividade/semana (média por controle)
+          <input type="number" min="0" step="0.01" id="dimDiasSemana" value="1.64" oninput="renderDimensionamentoPainel()"
+            style="display:block;width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:400;color:var(--ink);">
+          <span style="display:block;font-size:10.5px;color:var(--ink-soft);font-weight:400;margin-top:4px;">É a frequência média de ações por controle na semana, não os dias de trabalho da equipe. Ex.: 121 ações ÷ 17 controles ÷ 4,345 semanas/mês ≈ 1,64.</span>
+        </label>
+        <label style="font-size:12px;color:var(--ink-soft);font-weight:600;">
+          Quantidade de técnicos
+          <input type="number" min="0" step="1" id="dimTecnicos" value="4" oninput="renderDimensionamentoPainel()"
+            style="display:block;width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:400;color:var(--ink);">
+          <span style="display:block;font-size:10.5px;color:var(--ink-soft);font-weight:400;margin-top:4px;">Só quem executa ação de campo diretamente — coordenador não entra na conta.</span>
+        </label>
+      </div>
+    </div>
+    <div id="dimensionamentoResultado"></div>
+  </div>
+
+<!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
   <div class="view" id="view-coordenacao">
     <div class="module-header">
       <div>
@@ -4747,7 +4781,7 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
-const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','contratos','reconhecimento'];
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','contratos','reconhecimento','dimensionamento'];
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4784,6 +4818,9 @@ function showView(name){
   }
   if(name === 'reconhecimento'){
     renderReconhecimentoPainel();
+  }
+  if(name === 'dimensionamento'){
+    renderDimensionamentoPainel();
   }
 }
 
@@ -5188,6 +5225,56 @@ function renderReconhecimentoPainel(){
     <div class="logtable-wrap">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por responsável</div>
       ${linhasResponsavel || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum colaborador na matriz.</p>'}
+    </div>
+  `;
+}
+
+/** Calculadora de dimensionamento de equipe: mesma lógica do framework de
+ * dimensionamento elaborado pela Diretoria, simplificada para 3 entradas.
+ * Ações/mês estimado ≈ controles ativos x dias de atividade/semana (média
+ * de ações por controle) x 4,345 semanas/mês. Faixa ideal de referência:
+ * 17–25 ações/técnico/mês (mesmos limiares de contratação/distrato do
+ * framework original, ±20% em torno do ideal de referência ~20,83).
+ * Calculadora ao vivo: não persiste histórico, recalcula a cada input. */
+function renderDimensionamentoPainel(){
+  const el = document.getElementById('dimensionamentoResultado');
+  if(!el) return;
+
+  const controles = parseFloat(document.getElementById('dimControles').value) || 0;
+  const diasSemana = parseFloat(document.getElementById('dimDiasSemana').value) || 0;
+  const tecnicos = parseFloat(document.getElementById('dimTecnicos').value) || 0;
+
+  const SEMANAS_MES = 4.345;
+  const LIMITE_MIN = 17;
+  const LIMITE_MAX = 25;
+
+  const acoesMes = controles * diasSemana * SEMANAS_MES;
+  const acoesPorTecnico = tecnicos > 0 ? acoesMes / tecnicos : null;
+
+  let statClass = 's-nao';
+  let mensagem = 'Informe a quantidade de técnicos para calcular a carga por pessoa.';
+  if(acoesPorTecnico !== null){
+    if(acoesPorTecnico > LIMITE_MAX){
+      statClass = 's-atraso';
+      mensagem = `Cada técnico executaria em média ${acoesPorTecnico.toFixed(1)} ações/mês, acima da faixa ideal (${LIMITE_MIN}–${LIMITE_MAX}). Sinal para considerar contratação de reforço.`;
+    }else if(acoesPorTecnico < LIMITE_MIN){
+      statClass = 's-plan';
+      mensagem = `Cada técnico executaria em média ${acoesPorTecnico.toFixed(1)} ações/mês, abaixo da faixa ideal (${LIMITE_MIN}–${LIMITE_MAX}). Sinal para avaliar se há capacidade ociosa na equipe.`;
+    }else{
+      statClass = 's-concl';
+      mensagem = `Cada técnico executaria em média ${acoesPorTecnico.toFixed(1)} ações/mês, dentro da faixa ideal (${LIMITE_MIN}–${LIMITE_MAX}).`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
+      <div class="stat total"><div class="num">${acoesMes.toFixed(1)}</div><div class="lbl">Ações/mês estimadas</div></div>
+      <div class="stat ${statClass}"><div class="num">${acoesPorTecnico===null?'—':acoesPorTecnico.toFixed(1)}</div><div class="lbl">Ações/técnico/mês</div></div>
+      <div class="stat s-nao"><div class="num">${LIMITE_MIN}–${LIMITE_MAX}</div><div class="lbl">Faixa ideal de referência</div></div>
+    </div>
+    <div class="logtable-wrap">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Leitura</div>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">${mensagem}</p>
     </div>
   `;
 }
