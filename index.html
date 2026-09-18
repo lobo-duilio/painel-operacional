@@ -1405,7 +1405,7 @@
     <div class="module-header">
       <div>
         <h2>Dimensionamento de Equipe</h2>
-        <p>Carga de trabalho por técnico calculada por controle — cada controle tem sua própria frequência mensal de ações, em vez de uma média única para todos. Lista de controles ativos (Estado = "Em curso") importada da planilha "Custom_dimensionamento-controles"; somente leitura aqui — inclusão, remoção ou mudança de frequência de um controle é feita direto na planilha.</p>
+        <p>Carga de trabalho por técnico calculada por controle — cada controle tem sua própria frequência mensal de ações, em vez de uma média única para todos. Lista de controles ativos importada da planilha "Custom_dimensionamento-controles" e editável abaixo (adicionar, remover ou mudar a frequência de um controle) direto pelo Dashboard.</p>
       </div>
     </div>
     <div class="logtable-wrap" style="max-width:340px;margin-bottom:20px;">
@@ -1418,6 +1418,10 @@
       </label>
     </div>
     <div id="dimensionamentoResultado"></div>
+    <div class="logtable-wrap tabela-rolavel" style="margin-top:20px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Controles ativos e frequência mensal</div>
+      <div id="sub-custom-dimensionamento-controles"></div>
+    </div>
   </div>
 
   <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
@@ -1679,6 +1683,7 @@ function clientKeyToTabId(key){
   if(key.indexOf('roedores-') === 0) return 'roedores';
   if(key.indexOf('aves-') === 0) return 'aves';
   if(key.indexOf('auditoria-') === 0) return 'auditoria';
+  if(key === 'custom-dimensionamento-controles') return 'dimensionamento';
   const suffixMatch = key.match(/^(.+)-(itens|entrada|saida|registros|empreendimentos|embasamentos|especies)$/);
   if(suffixMatch && stockTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
   if(suffixMatch && diarioTabBaseKeys.indexOf(suffixMatch[1]) !== -1) return suffixMatch[1];
@@ -5225,11 +5230,30 @@ function renderReconhecimentoPainel(){
  * Faixa ideal de referência: 17–25 ações/técnico/mês (mesmos limiares de
  * contratação/distrato do framework original da Diretoria, ±20% em torno
  * do ideal de referência ~20,83).
- * Lista de controles: somente leitura, vem de logData['custom-dimensionamento-controles']
- * (aba "Custom_dimensionamento-controles" da planilha do Dashboard, cujo
- * conteúdo é mantido direto na planilha — sem tela de cadastro aqui).
+ * Lista de controles: vem de logData['custom-dimensionamento-controles']
+ * (aba "Custom_dimensionamento-controles" da planilha do Dashboard),
+ * editável direto pelo Dashboard via LOG_CONFIGS/renderLogTable — mesmo
+ * mecanismo genérico já usado nos catálogos de Empreendimentos/Espécies.
  * Calculadora ao vivo: não persiste histórico, recalcula a cada input. */
 function renderDimensionamentoPainel(){
+  // Sempre registra o LOG_CONFIGS, mesmo se a view já existir no DOM (mesmo
+  // padrão de mountFaunaTab/mountDiarioTab) — habilita adicionar/remover
+  // controle usando o mesmo mecanismo genérico das demais listas do Dashboard.
+  // Os nomes das colunas (Controle/Frequencia_Mensal) têm que ser IDÊNTICOS
+  // aos cabeçalhos reais da aba "Custom_dimensionamento-controles" na
+  // planilha — é assim que o backend genérico lê/grava a aba por nome de
+  // coluna; usar outro nome criaria colunas novas em vez de reaproveitar as
+  // existentes.
+  LOG_CONFIGS['custom-dimensionamento-controles'] = {
+    container: 'sub-custom-dimensionamento-controles',
+    cols: [
+      {key:'Controle', label:'Controle', type:'text'},
+      {key:'Frequencia_Mensal', label:'Frequência mensal', type:'number'}
+    ],
+    sortBy: 'Controle'
+  };
+  renderLogTable('custom-dimensionamento-controles');
+
   const el = document.getElementById('dimensionamentoResultado');
   if(!el) return;
 
@@ -5260,12 +5284,6 @@ function renderDimensionamentoPainel(){
     }
   }
 
-  const linhasControles = controles.map(c => `
-          <tr>
-            <td>${c.Controle}</td>
-            <td style="text-align:right;">${(parseFloat(c.Frequencia_Mensal)||0).toLocaleString('pt-BR')}</td>
-          </tr>`).join('');
-
   el.innerHTML = `
     <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
       <div class="stat total"><div class="num">${controles.length}</div><div class="lbl">Controles ativos</div></div>
@@ -5276,18 +5294,10 @@ function renderDimensionamentoPainel(){
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Leitura</div>
       <p style="font-size:12.5px;color:var(--ink-soft);margin:0;">${mensagem}</p>
     </div>
-    <div class="logtable-wrap tabela-rolavel">
-      <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Controles ativos e frequência mensal</div>
-      <table class="logtable">
-        <thead>
-          <tr><th>Controle</th><th style="text-align:right;">Frequência mensal</th></tr>
-        </thead>
-        <tbody>
-          ${linhasControles || '<tr class="empty-row"><td colspan="2">Nenhum controle ativo encontrado na planilha.</td></tr>'}
-        </tbody>
-      </table>
-    </div>
   `;
+  // A tabela de controles (com adicionar/remover) é a tabela genérica
+  // renderizada acima por renderLogTable('custom-dimensionamento-controles'),
+  // não mais montada aqui manualmente.
 }
 
 function getSelectOptionsForCol(c){
@@ -5449,6 +5459,7 @@ function addLogRow(key){
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
+  if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -5461,6 +5472,7 @@ function updateLogRow(key, id, field, value){
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
+  if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -5478,6 +5490,7 @@ function deleteLogRow(key, id){
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
   if(key === 'aves-feedback') { renderAvesFeedbackResumo(); }
+  if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
 }
@@ -6739,14 +6752,24 @@ async function bulkLoadInitialData(){
   renderChecklistResults();
 
   // Controles ativos para a calculadora de Dimensionamento de Equipe —
-  // lista + frequência mensal mantidas direto na planilha (aba
-  // "Custom_dimensionamento-controles"), sem tela de cadastro aqui.
+  // lista + frequência mensal mantidas na planilha (aba
+  // "Custom_dimensionamento-controles"), agora também editável (adicionar/
+  // remover controle) direto pelo Dashboard, via LOG_CONFIGS genérico.
   const dimensionamentoEntry = batch1['log-custom-dimensionamento-controles'];
   if(dimensionamentoEntry && dimensionamentoEntry.value){
     try{ logData['custom-dimensionamento-controles'] = JSON.parse(dimensionamentoEntry.value); }catch(e){ logData['custom-dimensionamento-controles'] = []; }
   }else{
     logData['custom-dimensionamento-controles'] = [];
   }
+  // Linhas vindas direto da planilha (fora da tela de cadastro) não têm
+  // campo "id" — só passam a ter depois da 1ª adição/edição pelo Dashboard,
+  // quando a linha é reescrita com o formato genérico. addLogRow/deleteLogRow/
+  // updateLogRow dependem de um "id" único por linha para saber qual linha
+  // afetar; sem essa correção, linhas antigas (todas com id undefined)
+  // seriam tratadas como uma única linha e uma exclusão apagaria todas de
+  // uma vez. Preenche aqui, na carga, um id sintético e estável para quem
+  // ainda não tiver.
+  logData['custom-dimensionamento-controles'].forEach((r,i) => { if(r.id === undefined || r.id === null || r.id === '') r.id = 'seed-' + i; });
 
   // Matriz de auditoria: se já existir uma versão customizada salva (alguém
   // usou o "Gerenciar matriz" antes), usa ela. Senão, mantém a cópia da
