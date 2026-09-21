@@ -6768,8 +6768,14 @@ async function bulkLoadInitialData(){
   // afetar; sem essa correção, linhas antigas (todas com id undefined)
   // seriam tratadas como uma única linha e uma exclusão apagaria todas de
   // uma vez. Preenche aqui, na carga, um id sintético e estável para quem
-  // ainda não tiver.
-  logData['custom-dimensionamento-controles'].forEach((r,i) => { if(r.id === undefined || r.id === null || r.id === '') r.id = 'seed-' + i; });
+  // ainda não tiver — precisa ser NÚMERO, nunca string: renderLogTable
+  // interpola o id sem aspas dentro do atributo onclick (ex.:
+  // deleteLogRow('chave',${row.id})); um id de texto (ex.: 'seed-0', usado
+  // numa versão anterior) vira JavaScript inválido nesse atributo e quebra
+  // silenciosamente o botão Remover e a edição dessa linha (confirmado ao
+  // vivo: "Uncaught ReferenceError: seed is not defined"). Número negativo
+  // nunca colide com os ids reais, que vêm de Date.now() (sempre positivo).
+  logData['custom-dimensionamento-controles'].forEach((r,i) => { if(r.id === undefined || r.id === null || r.id === '') r.id = -(i+1); });
 
   // Matriz de auditoria: se já existir uma versão customizada salva (alguém
   // usou o "Gerenciar matriz" antes), usa ela. Senão, mantém a cópia da
