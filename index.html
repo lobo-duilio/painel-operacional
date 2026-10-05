@@ -1386,6 +1386,7 @@
       <button class="active" onclick="showSub('reconhecimento','painel')">Painel</button>
       <button onclick="showSub('reconhecimento','sucessos')">Registrar sucesso</button>
       <button onclick="showSub('reconhecimento','incidentes')">Registrar incidente</button>
+      <button onclick="showSub('reconhecimento','colaboradores')">Colaboradores</button>
     </div>
     <div class="subview active" id="sub-reconhecimento-painel">
       <div id="reconhecimentoPainel"></div>
@@ -1397,6 +1398,10 @@
     <div class="subview" id="sub-reconhecimento-incidentes">
       <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Um lançamento por ocorrência. O contador de "dias sem incidente" de cada responsável é calculado a partir da data mais recente aqui registrada.</p>
       <div id="sub-reconhecimento-incidentes-tabela"></div>
+    </div>
+    <div class="subview" id="sub-reconhecimento-colaboradores">
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Lista editável de colaboradores do Reconhecimento. Os nomes daqui se somam aos da matriz de Auditoria e ao cadastro de responsáveis de Aves no menu "Colaborador" — use para incluir quem não aparece nas outras listas.</p>
+      <div id="sub-reconhecimento-colaboradores-tabela"></div>
     </div>
   </div>
 
@@ -4949,7 +4954,7 @@ const LOG_CONFIGS = {
     container:'sub-reconhecimento-sucessos-tabela',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'responsavel', label:'Responsável', type:'select', get options(){ return Object.keys(AUDITORIA_MATRIZ).sort(); }},
+      {key:'responsavel', label:'Responsável', type:'select', get options(){ return reconhecimentoColaboradores(); }},
       {key:'empreendimento', label:'Empreendimento / contrato', type:'text'},
       {key:'resultado', label:'Resultado', type:'select', options:['Dentro do prazo do contrato','Fora do prazo do contrato']},
       {key:'obs', label:'Observação', type:'text'}
@@ -4959,9 +4964,19 @@ const LOG_CONFIGS = {
     container:'sub-reconhecimento-incidentes-tabela',
     cols:[
       {key:'data', label:'Data', type:'date'},
-      {key:'responsavel', label:'Responsável', type:'select', get options(){ return Object.keys(AUDITORIA_MATRIZ).sort(); }},
+      {key:'tipo', label:'Tipo', type:'select', options:['Acidente','Quase Acidente']},
+      {key:'empreendimento', label:'Empreendimento', type:'select', get options(){ return reconhecimentoEmpreendimentos(); }},
+      {key:'responsavel', label:'Colaborador', type:'select', get options(){ return reconhecimentoColaboradores(); }},
+      {key:'ave', label:'Ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
       {key:'descricao', label:'Descrição', type:'textarea'}
     ]
+  },
+  'reconhecimento-colaboradores': {
+    container:'sub-reconhecimento-colaboradores-tabela',
+    cols:[
+      {key:'nome', label:'Nome do colaborador', type:'text'}
+    ],
+    sortBy:'nome'
   },
   'contratos': {
     container:'sub-contratos-tabela',
@@ -5161,6 +5176,32 @@ function diasDesde(dataStr){
   return Math.round((hoje - d) / 86400000);
 }
 
+/** Lista unificada de colaboradores do Reconhecimento: cadastro próprio
+ * (aba Colaboradores) + matriz de Auditoria + cadastro de responsáveis de Aves.
+ * Sem duplicatas (comparação sem diferenciar maiúsculas/espaços), em ordem alfabética. */
+function reconhecimentoColaboradores(){
+  const vistos = {};
+  const out = [];
+  const add = n => {
+    const nome = String(n == null ? '' : n).trim();
+    if(!nome) return;
+    const chave = nome.toLowerCase().replace(/\s+/g,' ');
+    if(vistos[chave]) return;
+    vistos[chave] = true;
+    out.push(nome);
+  };
+  Object.keys(AUDITORIA_MATRIZ || {}).forEach(add);
+  (logData['reconhecimento-colaboradores'] || []).forEach(r => add(r.nome));
+  (logData['aves-cadastro-responsaveis'] || []).forEach(r => add(r.nome));
+  return out.sort((a,b) => a.localeCompare(b,'pt-BR'));
+}
+
+/** Empreendimentos cadastrados no módulo Contratos (sem duplicatas, ordem alfabética). */
+function reconhecimentoEmpreendimentos(){
+  const vals = (logData['contratos'] || []).map(c => String(c.empreendimento || '').trim()).filter(Boolean);
+  return Array.from(new Set(vals)).sort((a,b) => a.localeCompare(b,'pt-BR'));
+}
+
 /** Painel agregado do módulo Reconhecimento: cumprimento de prazo (Painel Geral),
  * taxa de sucesso dentro do prazo de contrato, e dias sem incidente -- por responsável,
  * usando a matriz de colaboradores já cadastrada em Auditoria como fonte de nomes. */
@@ -5178,7 +5219,9 @@ function renderReconhecimentoPainel(){
   const pctSucesso = totalSucessos ? Math.round(dentroPrazo / totalSucessos * 100) : null;
 
   const incidentes = logData['reconhecimento-incidentes'] || [];
-  const nomes = Object.keys(AUDITORIA_MATRIZ).sort();
+  const nomes = reconhecimentoColaboradores();
+  const totalAcidentes = incidentes.filter(i => i.tipo === 'Acidente').length;
+  const totalQuase = incidentes.filter(i => i.tipo === 'Quase Acidente').length;
 
   const linhasResponsavel = nomes.map(nome=>{
     const casosPessoa = sucessos.filter(s=>s.responsavel===nome);
@@ -5209,10 +5252,12 @@ function renderReconhecimentoPainel(){
   }).join('');
 
   el.innerHTML = `
-    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
+    <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px;">
       <div class="stat total"><div class="num">${pctPrazo}%</div><div class="lbl">Atividades no prazo (Painel Geral)</div></div>
       <div class="stat s-concl"><div class="num">${pctSucesso===null?'—':pctSucesso+'%'}</div><div class="lbl">Sucesso dentro do prazo de contrato</div></div>
       <div class="stat s-exec"><div class="num">${totalSucessos}</div><div class="lbl">Casos registrados</div></div>
+      <div class="stat"><div class="num">${totalAcidentes}</div><div class="lbl">Acidentes</div></div>
+      <div class="stat"><div class="num">${totalQuase}</div><div class="lbl">Quase acidentes</div></div>
     </div>
     <div class="logtable-wrap">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por responsável</div>
@@ -5462,6 +5507,7 @@ function addLogRow(key){
   if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
+  if(key === 'reconhecimento-colaboradores'){ renderLogTable('reconhecimento-incidentes'); renderLogTable('reconhecimento-sucessos'); }
 }
 
 function updateLogRow(key, id, field, value){
@@ -5475,6 +5521,7 @@ function updateLogRow(key, id, field, value){
   if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
+  if(key === 'reconhecimento-colaboradores'){ renderLogTable('reconhecimento-incidentes'); renderLogTable('reconhecimento-sucessos'); }
 }
 
 function deleteLogRow(key, id){
@@ -5493,6 +5540,7 @@ function deleteLogRow(key, id){
   if(key === 'custom-dimensionamento-controles') renderDimensionamentoPainel();
   maybeRenderStockEstoque(key);
   maybeRefreshDiarioDropdowns(key);
+  if(key === 'reconhecimento-colaboradores'){ renderLogTable('reconhecimento-incidentes'); renderLogTable('reconhecimento-sucessos'); }
 }
 
 /* ---- Gráficos simples (SVG, sem dependências externas) ---- */
