@@ -5168,7 +5168,10 @@ async function saveLog(key){
 /** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
 /** Dias corridos entre uma data (string) e hoje. Retorna null se a data for inválida. */
 function diasDesde(dataStr){
-  const d = new Date(dataStr);
+  // "AAAA-MM-DD" é lido pelo JS como meia-noite UTC; em Salvador (UTC-3)
+  // isso cai no dia anterior e somava 1 dia a mais. Lê a data como local.
+  const m = String(dataStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(dataStr);
   if(isNaN(d)) return null;
   const hoje = new Date();
   d.setHours(0,0,0,0);
