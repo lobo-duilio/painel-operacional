@@ -5188,6 +5188,10 @@ function reconhecimentoNomesBrutos_(){
   Object.keys(AUDITORIA_MATRIZ || {}).forEach(add);
   (logData['reconhecimento-colaboradores'] || []).forEach(r => add(r.nome));
   (logData['aves-cadastro-responsaveis'] || []).forEach(r => add(r.nome));
+  // Quem já tem registro no Reconhecimento entra na lista mesmo que não
+  // esteja (mais) em nenhum cadastro -- ex.: ex-colaboradores com histórico.
+  (logData['reconhecimento-incidentes'] || []).forEach(r => add(r.responsavel));
+  (logData['reconhecimento-sucessos'] || []).forEach(r => add(r.responsavel));
   return out;
 }
 
