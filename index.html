@@ -5280,6 +5280,8 @@ function renderReconhecimentoPainel(){
     const incidentesPessoa = incidentes.filter(i=>reconhecimentoNomeCanonico(i.responsavel)===nome)
       .slice().sort((a,b)=> new Date(b.data||0) - new Date(a.data||0));
     const dias = incidentesPessoa.length ? diasDesde(incidentesPessoa[0].data) : null;
+    const acidPessoa = incidentesPessoa.filter(i=>i.tipo==='Acidente').length;
+    const quasePessoa = incidentesPessoa.filter(i=>i.tipo==='Quase Acidente').length;
 
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:8px;flex-wrap:wrap;">
@@ -5291,6 +5293,14 @@ function renderReconhecimentoPainel(){
           <div>
             <div style="font-size:18px;font-weight:700;color:${dias===null?'var(--ink-soft)':'var(--sage)'};">${dias===null?'—':dias}</div>
             <div style="font-size:10.5px;color:var(--ink-soft);">dias sem incidente</div>
+          </div>
+          <div>
+            <div style="font-size:18px;font-weight:700;color:${acidPessoa?'var(--red)':'var(--ink-soft)'};">${acidPessoa}</div>
+            <div style="font-size:10.5px;color:var(--ink-soft);">acidente${acidPessoa===1?'':'s'}</div>
+          </div>
+          <div>
+            <div style="font-size:18px;font-weight:700;color:${quasePessoa?'var(--amber)':'var(--ink-soft)'};">${quasePessoa}</div>
+            <div style="font-size:10.5px;color:var(--ink-soft);">quase acidente${quasePessoa===1?'':'s'}</div>
           </div>
           <div>
             <div style="font-size:18px;font-weight:700;color:${pctPessoa===null?'var(--ink-soft)':'var(--steel)'};">${pctPessoa===null?'—':pctPessoa+'%'}</div>
@@ -5312,7 +5322,43 @@ function renderReconhecimentoPainel(){
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Por responsável</div>
       ${linhasResponsavel || '<p style="font-size:12.5px;color:var(--ink-soft);">Nenhum colaborador na matriz.</p>'}
     </div>
+    ${reconhecimentoOcorrenciasHtml(incidentes)}
   `;
+}
+
+/** Lista de acidentes e quase acidentes (somente leitura) exibida no Painel
+ * do Reconhecimento, mais recente primeiro. A edição continua na subaba
+ * "Registrar incidente". Registros sem Tipo aparecem como "Sem tipo". */
+function reconhecimentoOcorrenciasHtml(incidentes){
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const dataBR = d => {
+    const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : esc(d || '—');
+  };
+  const lista = (incidentes || []).slice().sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));
+  if(!lista.length) return '';
+  const selo = t => {
+    if(t === 'Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--red-light);color:var(--red);">Acidente</span>';
+    if(t === 'Quase Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--amber-light);color:var(--amber);">Quase acidente</span>';
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:var(--gray-light);color:var(--ink-soft);">Sem tipo</span>';
+  };
+  const linhas = lista.map(i => `
+        <tr>
+          <td style="white-space:nowrap;">${dataBR(i.data)}</td>
+          <td>${selo(i.tipo)}</td>
+          <td>${esc(reconhecimentoNomeCanonico(i.responsavel) || '—')}</td>
+          <td>${esc(i.empreendimento || '—')}</td>
+          <td>${esc(i.ave || '—')}</td>
+          <td style="white-space:normal;min-width:220px;">${esc(i.descricao || '')}</td>
+        </tr>`).join('');
+  return `
+    <div class="logtable-wrap" style="margin-top:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Acidentes e quase acidentes (${lista.length})</div>
+      <table class="logtable">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>`;
 }
 
 /** Calculadora de dimensionamento de equipe, por controle: cada controle
