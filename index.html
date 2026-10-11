@@ -4965,6 +4965,7 @@ const LOG_CONFIGS = {
     cols:[
       {key:'data', label:'Data', type:'date'},
       {key:'tipo', label:'Tipo', type:'select', options:['Acidente','Quase Acidente']},
+      {key:'gravidade', label:'Gravidade', type:'select', options:['Sem lesão','Primeiros socorros','Atendimento médico','Afastamento','Óbito']},
       {key:'empreendimento', label:'Empreendimento', type:'select', get options(){ return reconhecimentoEmpreendimentos(); }},
       {key:'responsavel', label:'Colaborador', type:'select', canon:reconhecimentoNomeCanonico, get options(){ return reconhecimentoColaboradores(); }},
       {key:'ave', label:'Ave', type:'select', sourceKey:'aves-cadastro-aves', sourceField:'nome'},
@@ -5349,6 +5350,7 @@ function reconhecimentoOcorrenciasHtml(incidentes){
         <tr>
           <td style="white-space:nowrap;">${dataBR(i.data)}</td>
           <td>${selo(i.tipo)}</td>
+          <td>${esc(i.gravidade || '—')}</td>
           <td>${esc(reconhecimentoNomeCanonico(i.responsavel) || '—')}</td>
           <td>${esc(i.empreendimento || '—')}</td>
           <td>${esc(i.ave || '—')}</td>
@@ -5358,7 +5360,7 @@ function reconhecimentoOcorrenciasHtml(incidentes){
     <div class="logtable-wrap" style="margin-top:16px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Acidentes e quase acidentes (${lista.length})</div>
       <table class="logtable">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>`;
