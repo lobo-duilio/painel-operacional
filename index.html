@@ -5473,9 +5473,48 @@ function canManageList(key){
   * inteiras -- ali o usuário precisa enxergar e editar a lista toda. */
 const LOG_TABLE_MAX_LINHAS = 20;
 
+/** Literal JS seguro para o id de uma linha dentro de atributos onclick/
+  * onchange. Ids numéricos saem como número; qualquer outro (texto vindo da
+  * planilha, ex.: ids de Auditorias/Checklist) sai entre aspas e escapado --
+  * antes o id era interpolado cru e um id de texto virava JS inválido
+  * (mesmo bug do 'seed-0' de 21/09, agora corrigido para TODAS as listas). */
+function logIdJs_(id){
+  if(typeof id === 'number' && isFinite(id)) return String(id);
+  const txt = String(id == null ? '' : id);
+  if(/^-?\d+(\.\d+)?$/.test(txt)) return txt;
+  return "'" + txt.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;') + "'";
+}
+/** Escapa texto para uso dentro de atributo HTML entre aspas duplas. */
+function escAttr_(v){
+  return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+/** Compara ids sem depender de tipo (número x texto vindo da planilha). */
+function mesmoLogId_(a, b){ return String(a) === String(b); }
+/** Garante id único em toda linha da lista. Linhas lançadas direto na
+  * planilha (ex.: "Petrópolis Alagoinhas" no catálogo de empreendimentos,
+  * incidente de 28/09 no Reconhecimento) chegam sem id; com 2+ linhas assim
+  * na mesma lista, "Remover" apagaria todas de uma vez e "editar" mexeria
+  * sempre na primeira. Usa números negativos abaixo do menor já existente
+  * (nunca colide com Date.now()). Só altera a memória; a planilha passa a
+  * ter o id na próxima gravação da lista. */
+function garantirIdsLog_(key){
+  const rows = logData[key];
+  if(!Array.isArray(rows)) return;
+  const vistos = new Set();
+  let menor = 0;
+  rows.forEach(r => { if(r && r.id !== undefined && r.id !== null && r.id !== ''){ const n = Number(r.id); if(isFinite(n) && n < menor) menor = n; } });
+  rows.forEach(r => {
+    if(!r || typeof r !== 'object') return;
+    const vazio = (r.id === undefined || r.id === null || r.id === '');
+    if(vazio || vistos.has(String(r.id))){ menor -= 1; r.id = menor; }
+    vistos.add(String(r.id));
+  });
+}
+
 function renderLogTable(key){
   const cfg = LOG_CONFIGS[key];
   if(!cfg) return;
+  garantirIdsLog_(key);
   const container = document.getElementById(cfg.container);
   if(!container) return;
 
@@ -5527,17 +5566,17 @@ function renderLogTable(key){
         const listaCompleta = foraDoCatalogo ? [val].concat(opcoes) : opcoes;
         const optsHtml = listaCompleta.map(o => {
           const rotulo = (o === val && foraDoCatalogo) ? o + ' (não está no catálogo)' : o;
-          return `<option value="${o}" ${o===val?'selected':''}>${rotulo}</option>`;
+          return `<option value="${escAttr_(o)}" ${o===val?'selected':''}>${escAttr_(rotulo)}</option>`;
         }).join('');
-        return `<td><select onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)"><option value="">Selecione…</option>${optsHtml}</select></td>`;
+        return `<td><select onchange="updateLogRow('${key}',${logIdJs_(row.id)},'${c.key}',this.value)"><option value="">Selecione…</option>${optsHtml}</select></td>`;
       }
       if(c.type==='textarea'){
-        return `<td><textarea onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)">${val}</textarea></td>`;
+        return `<td><textarea onchange="updateLogRow('${key}',${logIdJs_(row.id)},'${c.key}',this.value)">${escAttr_(val)}</textarea></td>`;
       }
-      return `<td><input type="${c.type}" value="${val}" onchange="updateLogRow('${key}',${row.id},'${c.key}',this.value)"></td>`;
+      return `<td><input type="${c.type}" value="${escAttr_(val)}" onchange="updateLogRow('${key}',${logIdJs_(row.id)},'${c.key}',this.value)"></td>`;
     }).join('');
     const delCell = canDelete
-      ? `<td><button class="rowdel" onclick="deleteLogRow('${key}',${row.id})">Remover</button></td>`
+      ? `<td><button class="rowdel" onclick="deleteLogRow('${key}',${logIdJs_(row.id)})">Remover</button></td>`
       : `<td></td>`;
     return `<tr>${tds}${delCell}</tr>`;
   }).join('') : `<tr class="empty-row"><td colspan="${cfg.cols.length+1}">Nenhum registro ainda. Adicione acima.</td></tr>`;
@@ -5545,7 +5584,7 @@ function renderLogTable(key){
   const addCells = cfg.cols.map(c=>{
     if(c.type === 'select'){
       const opcoes = getSelectOptionsForCol(c);
-      const optsHtml = opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
+      const optsHtml = opcoes.map(o => `<option value="${escAttr_(o)}">${escAttr_(o)}</option>`).join('');
       return `<td><select id="new-${key}-${c.key}"><option value="">Selecione…</option>${optsHtml}</select></td>`;
     }
     if(c.type==='textarea'){
@@ -5616,7 +5655,8 @@ function addLogRow(key){
 }
 
 function updateLogRow(key, id, field, value){
-  const row = logData[key].find(r=>r.id===id);
+  const row = (logData[key] || []).find(r=>mesmoLogId_(r.id, id));
+  if(!row){ alert('Não foi possível localizar este item (a lista pode ter sido alterada). Recarregue a página e tente de novo.'); return; }
   row[field] = value;
   saveLog(key);
   if(key.startsWith('roedores-')) renderEstoque();
@@ -5635,7 +5675,10 @@ function deleteLogRow(key, id){
     return;
   }
   if(!confirm('Remover este item? Essa ação não pode ser desfeita.')) return;
-  logData[key] = logData[key].filter(r=>r.id!==id);
+  const antes = (logData[key] || []).length;
+  const restantes = (logData[key] || []).filter(r=>!mesmoLogId_(r.id, id));
+  if(antes - restantes.length !== 1){ alert('Remoção cancelada: o identificador deste item não é único ('+(antes - restantes.length)+' linhas correspondentes). Nada foi apagado. Recarregue a página e tente de novo.'); renderLogTable(key); return; }
+  logData[key] = restantes;
   saveLog(key);
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
