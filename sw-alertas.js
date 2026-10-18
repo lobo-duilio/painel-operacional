@@ -27,7 +27,10 @@ self.addEventListener('notificationclick', function (event) {
   var link = (event.notification.data && event.notification.data.link) || self.registration.scope;
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (lista) {
     for (var i = 0; i < lista.length; i++) {
-      if (lista[i].url.indexOf(self.registration.scope) === 0 && 'focus' in lista[i]) return lista[i].focus();
+      var cli = lista[i];
+      if (cli.url.indexOf(self.registration.scope) === 0 && 'focus' in cli) {
+        return cli.focus().then(function (c) { return (c && 'navigate' in c) ? c.navigate(link).catch(function () { return c; }) : c; });
+      }
     }
     return self.clients.openWindow(link);
   }));
