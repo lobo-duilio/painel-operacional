@@ -1164,6 +1164,7 @@
         <button class="btn" id="notifBtn" onclick="toggleNotifPanel()">🔔 Prazos <span id="notifCount" class="notif-badge" style="display:none;">0</span></button>
         <div id="notifPanel" class="notif-panel"></div>
       </div>
+      <button class="btn" id="sstPushBtn" onclick="sstPushClique_()" title="Receber no celular os alertas de segurança (acidente, quase acidente, mal-estar)">🛡️ Ativar alertas SST</button>
       <span class="meta" id="userInfo" style="margin-right:6px;"></span>
       <button class="btn" onclick="doLogout()">Sair</button>
       <button class="btn" id="usersBtn" onclick="openUserPanel()">Gerenciar usuários</button>
@@ -1659,6 +1660,7 @@ function showApp(){
   document.getElementById('appRoot').style.display = 'block';
   updateUserInfo();
   applyRolePermissions();
+  if(typeof sstPushAoEntrar_ === 'function') sstPushAoEntrar_();
 }
 
 function updateUserInfo(){
@@ -7184,6 +7186,114 @@ function aplicarScrollEmTabelasLongas(){
 })();
 
 init();
+</script>
+<!-- ===== Alertas de segurança (SST) — notificações push (Firebase Cloud Messaging) ===== -->
+<script>
+const SST_FB_VER = '10.12.2';
+let sstPushCfg_ = null;
+
+function sstPushSuportado_(){
+  return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+}
+function sstEhIOS_(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function sstEhInstalado_(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+function sstCarregarScript_(src){
+  return new Promise(function(ok, falha){
+    if(document.querySelector('script[src="' + src + '"]')) return ok();
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = function(){ falha(new Error('não foi possível carregar ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+async function sstPushPost_(corpo){
+  const res = await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ token: SESSION ? SESSION.token : '' }, corpo)) });
+  const j = await res.json();
+  if(j.error) throw new Error(j.error);
+  return j;
+}
+function sstPushBotao_(estado){
+  const b = document.getElementById('sstPushBtn');
+  if(!b) return;
+  const t = { ativo:'🛡️ Alertas SST: ativos', inativo:'🛡️ Ativar alertas SST', negado:'🛡️ Alertas SST bloqueados', aguarde:'🛡️ Ativando…' };
+  b.textContent = t[estado] || t.inativo;
+  b.dataset.estado = estado;
+}
+async function sstObterToken_(){
+  if(!sstPushCfg_){
+    const j = await sstPushPost_({ action:'pushConfig' });
+    if(!j.ativo || !j.config || !j.config.apiKey) throw new Error('O servidor de alertas ainda não foi configurado pela gerência.');
+    sstPushCfg_ = j;
+  }
+  await sstCarregarScript_('https://www.gstatic.com/firebasejs/' + SST_FB_VER + '/firebase-app-compat.js');
+  await sstCarregarScript_('https://www.gstatic.com/firebasejs/' + SST_FB_VER + '/firebase-messaging-compat.js');
+  if(!firebase.apps.length) firebase.initializeApp(sstPushCfg_.config);
+  const reg = await navigator.serviceWorker.register('sw-alertas.js', { scope:'./' });
+  await navigator.serviceWorker.ready;
+  return firebase.messaging().getToken({ vapidKey: sstPushCfg_.vapidKey, serviceWorkerRegistration: reg });
+}
+async function sstRegistrarAparelho_(){
+  const tk = await sstObterToken_();
+  if(!tk) throw new Error('o navegador não gerou o identificador de push');
+  await sstPushPost_({ action:'registrarPush', pushToken: tk,
+    dispositivo: (sstEhInstalado_() ? 'app instalado · ' : 'navegador · ') + navigator.userAgent });
+  try{ localStorage.setItem('sst-push-token', tk); }catch(e){}
+  return tk;
+}
+async function sstPushClique_(){
+  const b = document.getElementById('sstPushBtn');
+  if(b && b.dataset.estado === 'aguarde') return;
+  if(!APPS_SCRIPT_URL || !SESSION){ alert('Entre no painel para ativar os alertas.'); return; }
+  if(sstEhIOS_() && !sstEhInstalado_()){
+    alert('No iPhone, os alertas só funcionam com o painel instalado na tela de início:\n\n1. Abra este painel no Safari.\n2. Toque em Compartilhar (quadrado com seta).\n3. Toque em "Adicionar à Tela de Início".\n4. Abra o painel pelo ícone criado e toque de novo em "Ativar alertas SST".\n\nRequer iOS 16.4 ou superior.');
+    return;
+  }
+  if(!sstPushSuportado_()){ alert('Este navegador não suporta notificações push. No Android, use o Chrome.'); return; }
+  if(b && b.dataset.estado === 'ativo'){
+    if(confirm('Os alertas estão ativos neste aparelho.\n\nOK = enviar uma notificação de teste agora\nCancelar = fechar')){
+      try{ const r = await sstPushPost_({ action:'testarPush' }); alert('Teste enviado: ' + r.resultado); }
+      catch(e){ alert('Falha no teste: ' + e.message); }
+    }
+    return;
+  }
+  sstPushBotao_('aguarde');
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){
+      sstPushBotao_(perm === 'denied' ? 'negado' : 'inativo');
+      alert(perm === 'denied'
+        ? 'As notificações foram bloqueadas para este site. Libere em: configurações do navegador → Configurações do site → Notificações.'
+        : 'Permissão não concedida.');
+      return;
+    }
+    await sstRegistrarAparelho_();
+    sstPushBotao_('ativo');
+    alert('Alertas de segurança ativados neste aparelho. Toque no botão de novo para enviar um teste.');
+  }catch(e){
+    sstPushBotao_('inativo');
+    alert('Não foi possível ativar os alertas: ' + (e && e.message ? e.message : e));
+  }
+}
+/* Ao entrar no painel: se a permissão já foi dada, renova o registro em silêncio (token pode mudar). */
+async function sstPushAoEntrar_(){
+  try{
+    if(!SESSION || !APPS_SCRIPT_URL || !sstPushSuportado_()){ sstPushBotao_('inativo'); return; }
+    if(Notification.permission === 'denied'){ sstPushBotao_('negado'); return; }
+    if(Notification.permission !== 'granted'){ sstPushBotao_('inativo'); return; }
+    if(sstEhIOS_() && !sstEhInstalado_()){ sstPushBotao_('inativo'); return; }
+    await sstRegistrarAparelho_();
+    sstPushBotao_('ativo');
+  }catch(e){
+    console.warn('SST push:', e);
+    sstPushBotao_('inativo');
+  }
+}
+/* Caso o login automático tenha terminado antes deste bloco ser lido. */
+(function(){ const r = document.getElementById('appRoot'); if(SESSION && r && r.style.display === 'block') sstPushAoEntrar_(); })();
 </script>
 </body>
 </html>
