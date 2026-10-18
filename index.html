@@ -7264,6 +7264,10 @@ async function sstPushPost_(corpo){
   const res = await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ token: SESSION ? SESSION.token : '' }, corpo)) });
   const j = await res.json();
+  if(j.error === 'unauthenticated' && typeof handleSessionExpired === 'function'){
+    handleSessionExpired();
+    throw new Error('Sua sessão expirou. Entre novamente.');
+  }
   if(j.error) throw new Error(j.error);
   return j;
 }
