@@ -644,6 +644,29 @@
   }
 
   /* Sub-module: Roedores / Aves */
+  /* Alertas SST */
+  .sst-f{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:600;color:var(--ink-soft);min-width:130px;flex:1 1 130px;}
+  .sst-f input,.sst-f select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-weight:400;color:var(--ink);background:#fff;}
+  .sst-chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--ink-soft);}
+  .sst-chip b{display:block;font-size:20px;color:var(--ink);}
+  .sst-card{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--gray);border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+  .sst-card.n-ACIDENTE{border-left-color:var(--red);}
+  .sst-card.n-QUASE{border-left-color:var(--amber);}
+  .sst-card.n-MAL{border-left-color:#D4B21F;}
+  .sst-card .sst-top{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;justify-content:space-between;}
+  .sst-card .sst-tit{font-weight:700;font-size:14.5px;}
+  .sst-card .sst-meta{font-size:12px;color:var(--ink-soft);margin-top:4px;line-height:1.5;}
+  .sst-card .sst-obs{font-size:13px;margin-top:10px;white-space:pre-wrap;word-break:break-word;background:var(--bg);border-radius:8px;padding:10px;}
+  .sst-tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--gray-light);color:var(--ink);}
+  .sst-tag.ok{background:var(--sage-light);color:var(--sage);}
+  .sst-tag.fp{background:var(--gray-light);color:var(--ink-soft);}
+  .sst-tag.rv{background:var(--amber-light);color:var(--amber);}
+  .sst-tag.na{background:var(--red-light);color:var(--red);}
+  .sst-aval{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;}
+  .sst-aval select,.sst-aval input{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;}
+  .sst-aval input{flex:1 1 180px;}
+  .sst-card details{margin-top:8px;font-size:12px;color:var(--ink-soft);}
+  .sst-card details div{margin-top:4px;word-break:break-word;}
   .module-header{
     display:flex;
     justify-content:space-between;
@@ -1189,6 +1212,7 @@
     <button id="opsub-contratos" onclick="showView('contratos')">Contratos</button>
     <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Reconhecimento</button>
     <button id="opsub-dimensionamento" onclick="showView('dimensionamento')">Dimensionamento de Equipe</button>
+    <button id="opsub-alertassst" onclick="showView('alertassst')">🛡️ Alertas SST</button>
   </div>
 
   <!-- VIEW: PAINEL GERAL (Atividades) -->
@@ -1428,6 +1452,29 @@
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Controles ativos e frequência mensal</div>
       <div id="sub-custom-dimensionamento-controles"></div>
     </div>
+  </div>
+
+  <!-- VIEW: ALERTAS DE SEGURANÇA (SST) — histórico de alertas -->
+  <div class="view" id="view-alertassst">
+    <div class="module-header">
+      <div>
+        <h2>🛡️ Alertas de segurança (SST)</h2>
+        <p>Histórico de todos os alertas de acidente, quase acidente e mal-estar disparados a partir dos relatórios (aba "SST_Alertas" da planilha). A avaliação de cada alerta alimenta a revisão semanal das palavras-chave.</p>
+      </div>
+    </div>
+    <div class="logtable-wrap" style="margin-bottom:16px;">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+        <label class="sst-f">Buscar<input type="search" id="sstBusca" placeholder="local, pessoa, texto, nº" oninput="sstRenderAlertas_()"></label>
+        <label class="sst-f">Nível<select id="sstNivel" onchange="sstRenderAlertas_()"><option value="">Todos</option><option>ACIDENTE</option><option>QUASE ACIDENTE</option><option>MAL-ESTAR</option></select></label>
+        <label class="sst-f">Envolvido<select id="sstSujeito" onchange="sstRenderAlertas_()"><option value="">Todos</option><option value="PESSOA">Pessoa</option><option value="AVE">Ave</option><option value="AMBOS">Pessoa e ave</option></select></label>
+        <label class="sst-f">Avaliação<select id="sstAval" onchange="sstRenderAlertas_()"><option value="">Todas</option><option value="-">Não avaliado</option><option>Confirmado</option><option>Falso positivo</option><option>Revisar</option></select></label>
+        <label class="sst-f">Período<select id="sstPeriodo" onchange="sstRenderAlertas_()"><option value="0">Tudo</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="365">12 meses</option></select></label>
+        <label id="sstHistWrap" style="font-size:12px;color:var(--ink-soft);display:flex;gap:6px;align-items:center;padding-bottom:8px;"><input type="checkbox" id="sstHist" onchange="sstCarregarAlertas_()"> incluir histórico (não enviado)</label>
+        <button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstCarregarAlertas_()">Atualizar</button>
+      </div>
+    </div>
+    <div id="sstResumo" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;"></div>
+    <div id="sstLista"><p style="font-size:13px;color:var(--ink-soft);">Carregando…</p></div>
   </div>
 
   <!-- VIEW: OPERACIONAL II (COORDENAÇÃO) -->
@@ -4780,7 +4827,7 @@ function renderGeral(){
 
 /* ===================== NAV: VIEWS E SUBVIEWS ===================== */
 
-const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','contratos','reconhecimento','dimensionamento'];
+const OPERACIONAL_GROUP_IDS = ['geral','roedores','aves','armadilhas','auditoria','contratos','reconhecimento','dimensionamento','alertassst'];
 
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -4820,6 +4867,9 @@ function showView(name){
   }
   if(name === 'dimensionamento'){
     renderDimensionamentoPainel();
+  }
+  if(name === 'alertassst' && typeof sstCarregarAlertas_ === 'function'){
+    sstCarregarAlertas_();
   }
 }
 
@@ -7294,6 +7344,133 @@ async function sstPushAoEntrar_(){
 }
 /* Caso o login automático tenha terminado antes deste bloco ser lido. */
 (function(){ const r = document.getElementById('appRoot'); if(SESSION && r && r.style.display === 'block') sstPushAoEntrar_(); })();
+</script>
+<!-- ===== Aba "Alertas SST" — histórico de alertas de segurança ===== -->
+<script>
+let SST_ALERTAS_ = [];
+let SST_ALERTAS_ADMIN_ = false;
+let SST_ALERTAS_CARREGADO_ = false;
+
+function sstEsc_(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
+}
+function sstDataBr_(s){
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(!m) return String(s || '');
+  return m[3] + '/' + m[2] + '/' + m[1] + (m[4] ? ' ' + m[4] + ':' + m[5] : '');
+}
+async function sstCarregarAlertas_(){
+  const lista = document.getElementById('sstLista');
+  if(!APPS_SCRIPT_URL || !SESSION){ if(lista) lista.innerHTML = '<p style="font-size:13px;color:var(--ink-soft);">Entre no painel para ver os alertas.</p>'; return; }
+  if(lista) lista.innerHTML = '<p style="font-size:13px;color:var(--ink-soft);">Carregando…</p>';
+  try{
+    const hist = document.getElementById('sstHist');
+    const j = await sstPushPost_({ action:'listarAlertasSST', incluirHistorico: !!(hist && hist.checked) });
+    SST_ALERTAS_ = j.alertas || [];
+    SST_ALERTAS_ADMIN_ = !!j.admin;
+    SST_ALERTAS_CARREGADO_ = true;
+    const hw = document.getElementById('sstHistWrap');
+    if(hw) hw.style.display = SST_ALERTAS_ADMIN_ ? 'flex' : 'none';
+    sstRenderAlertas_();
+  }catch(e){
+    if(lista) lista.innerHTML = '<p style="font-size:13px;color:var(--red);">Não foi possível carregar os alertas: ' + sstEsc_(e.message || e) + '</p>';
+  }
+}
+function sstFiltrados_(){
+  const q = (document.getElementById('sstBusca').value || '').toLowerCase().trim();
+  const niv = document.getElementById('sstNivel').value;
+  const suj = document.getElementById('sstSujeito').value;
+  const av = document.getElementById('sstAval').value;
+  const dias = Number(document.getElementById('sstPeriodo').value || 0);
+  const limite = dias ? new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10) : '';
+  return SST_ALERTAS_.filter(function(a){
+    if(niv && a.nivel !== niv) return false;
+    if(suj && a.sujeito !== suj) return false;
+    if(av === '-' && a.avaliacao) return false;
+    if(av && av !== '-' && a.avaliacao !== av) return false;
+    if(limite && String(a.registradoEm).slice(0, 10) < limite) return false;
+    if(q){
+      const t = [a.id, a.local, a.pessoas, a.preenchidoPor, a.observacao, a.aba, a.origem, a.termos, a.nivel].join(' ').toLowerCase();
+      if(t.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+function sstRenderAlertas_(){
+  const lista = document.getElementById('sstLista');
+  const resumo = document.getElementById('sstResumo');
+  if(!lista) return;
+  const itens = sstFiltrados_();
+  const cont = { ACIDENTE:0, 'QUASE ACIDENTE':0, 'MAL-ESTAR':0 };
+  let semAval = 0;
+  itens.forEach(function(a){ if(cont[a.nivel] !== undefined) cont[a.nivel]++; if(!a.avaliacao) semAval++; });
+  resumo.innerHTML =
+    '<div class="sst-chip"><b>' + itens.length + '</b>alertas</div>' +
+    '<div class="sst-chip"><b style="color:var(--red);">' + cont.ACIDENTE + '</b>🔴 acidente</div>' +
+    '<div class="sst-chip"><b style="color:var(--amber);">' + cont['QUASE ACIDENTE'] + '</b>🟠 quase acidente</div>' +
+    '<div class="sst-chip"><b style="color:#B8960F;">' + cont['MAL-ESTAR'] + '</b>🟡 mal-estar</div>' +
+    (SST_ALERTAS_ADMIN_ ? '<div class="sst-chip"><b>' + semAval + '</b>sem avaliação</div>' : '');
+  if(!itens.length){
+    lista.innerHTML = '<p style="font-size:13px;color:var(--ink-soft);">' + (SST_ALERTAS_.length ? 'Nenhum alerta com esses filtros.' : 'Nenhum alerta registrado até agora.') + '</p>';
+    return;
+  }
+  const icone = { 'ACIDENTE':'🔴', 'QUASE ACIDENTE':'🟠', 'MAL-ESTAR':'🟡' };
+  const classeAval = { 'Confirmado':'ok', 'Falso positivo':'fp', 'Revisar':'rv' };
+  lista.innerHTML = itens.map(function(a, i){
+    const cls = a.nivel === 'ACIDENTE' ? 'n-ACIDENTE' : (a.nivel === 'QUASE ACIDENTE' ? 'n-QUASE' : 'n-MAL');
+    const suj = a.sujeito === 'AVE' ? ' · ave' : (a.sujeito === 'AMBOS' ? ' · pessoa e ave' : '');
+    const tagAval = a.avaliacao
+      ? '<span class="sst-tag ' + (classeAval[a.avaliacao] || '') + '">' + sstEsc_(a.avaliacao) + '</span>'
+      : '<span class="sst-tag na">não avaliado</span>';
+    let h = '<div class="sst-card ' + cls + '">' +
+      '<div class="sst-top"><div class="sst-tit">' + (icone[a.nivel] || '⚠️') + ' ' + sstEsc_(a.nivel) + sstEsc_(suj) + ' — ' + sstEsc_(a.local || 'local não informado') + '</div>' +
+      '<div>' + (a.enviado ? '<span class="sst-tag">#' + sstEsc_(a.id) + '</span> ' : '<span class="sst-tag">histórico</span> ') + tagAval + '</div></div>' +
+      '<div class="sst-meta">Atividade: <b>' + sstEsc_(sstDataBr_(a.dataAtividade)) + '</b> · Registrado: ' + sstEsc_(sstDataBr_(a.registradoEm)) +
+      '<br>Envolvidos: <b>' + sstEsc_(a.pessoas || '—') + '</b>' + (a.preenchidoPor ? ' · Preenchido por: ' + sstEsc_(a.preenchidoPor.replace(/\s*<[^>]*>/, '')) : '') +
+      '<br>Origem: ' + sstEsc_(a.origem || '—') + (a.aba ? ' · ' + sstEsc_(a.aba) : '') + '</div>' +
+      '<div class="sst-obs">' + sstEsc_(a.observacao) + '</div>';
+    if(a.notaAvaliacao) h += '<div class="sst-meta" style="margin-top:8px;">Nota: ' + sstEsc_(a.notaAvaliacao) + '</div>';
+    if(SST_ALERTAS_ADMIN_){
+      h += '<details><summary>Envio e palavras detectadas</summary>' +
+        '<div><b>Termos:</b> ' + sstEsc_(a.termos || '—') + '</div>' +
+        '<div><b>Gerência (e-mail):</b> ' + sstEsc_(a.statusGerencia || '—') + '</div>' +
+        '<div><b>Telegram:</b> ' + sstEsc_(a.statusTelegram || '—') + '</div>' +
+        '<div><b>Técnicos:</b> ' + sstEsc_(a.statusTecnicos || '—') + (a.semEmail ? ' · sem e-mail: ' + sstEsc_(a.semEmail) : '') + '</div>' +
+        '<div><b>Push:</b> ' + sstEsc_(a.statusPush || '—') + '</div></details>' +
+        '<div class="sst-aval"><select id="sstAv' + i + '"><option value="">— avaliar —</option>' +
+        ['Confirmado', 'Falso positivo', 'Revisar'].map(function(o){ return '<option' + (a.avaliacao === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+        '</select><input id="sstNt' + i + '" placeholder="nota (opcional)">' +
+        '<button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstSalvarAvaliacao_(' + i + ')">Salvar</button></div>';
+    }
+    return h + '</div>';
+  }).join('');
+  window.__sstVisiveis = itens;
+}
+async function sstSalvarAvaliacao_(i){
+  const a = (window.__sstVisiveis || [])[i];
+  if(!a) return;
+  const av = document.getElementById('sstAv' + i).value;
+  const nota = document.getElementById('sstNt' + i).value;
+  try{
+    await sstPushPost_({ action:'avaliarAlertaSST', id: a.enviado ? a.id : '', assinatura: a.enviado ? '' : a.chave, avaliacao: av, nota: nota });
+    await sstCarregarAlertas_();
+  }catch(e){
+    alert('Não foi possível salvar a avaliação: ' + (e.message || e));
+  }
+}
+</script>
+<script>
+/* Abre a aba de alertas quando o painel é aberto pela notificação (link #alertas-sst). */
+function sstAbrirPeloLink_(){
+  if(location.hash !== '#alertas-sst') return;
+  const r = document.getElementById('appRoot');
+  if(SESSION && r && r.style.display === 'block' && document.getElementById('view-alertassst')) showView('alertassst');
+}
+window.addEventListener('hashchange', sstAbrirPeloLink_);
+setTimeout(sstAbrirPeloLink_, 1500);
+setTimeout(sstAbrirPeloLink_, 5000);
 </script>
 </body>
 </html>
