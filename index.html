@@ -1468,6 +1468,7 @@
         <label class="sst-f">Nível<select id="sstNivel" onchange="sstRenderAlertas_()"><option value="">Todos</option><option>ACIDENTE</option><option>QUASE ACIDENTE</option><option>MAL-ESTAR</option></select></label>
         <label class="sst-f">Envolvido<select id="sstSujeito" onchange="sstRenderAlertas_()"><option value="">Todos</option><option value="PESSOA">Pessoa</option><option value="AVE">Ave</option><option value="AMBOS">Pessoa e ave</option></select></label>
         <label class="sst-f">Avaliação<select id="sstAval" onchange="sstRenderAlertas_()"><option value="">Todas</option><option value="-">Não avaliado</option><option>Confirmado</option><option>Falso positivo</option><option>Revisar</option></select></label>
+        <label class="sst-f">Ordem<select id="sstOrdem" onchange="sstRenderAlertas_()"><option value="asc">Mais antigo → mais recente</option><option value="desc">Mais recente → mais antigo</option></select></label>
         <label class="sst-f">Período<select id="sstPeriodo" onchange="sstRenderAlertas_()"><option value="0">Tudo</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="365">12 meses</option></select></label>
         <label id="sstHistWrap" style="font-size:12px;color:var(--ink-soft);display:flex;gap:6px;align-items:center;padding-bottom:8px;"><input type="checkbox" id="sstHist" onchange="sstCarregarAlertas_()"> incluir histórico (não enviado)</label>
         <button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstCarregarAlertas_()">Atualizar</button>
@@ -7385,6 +7386,16 @@ function sstFiltrados_(){
   const av = document.getElementById('sstAval').value;
   const dias = Number(document.getElementById('sstPeriodo').value || 0);
   const limite = dias ? new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10) : '';
+  const ordemEl = document.getElementById('sstOrdem');
+  const desc = !!(ordemEl && ordemEl.value === 'desc');
+  /* Ordem de acontecimento: data da atividade; empate → horário em que foi registrado. */
+  const dataIso = function(v){
+    const t = String(v || '').trim();
+    const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if(br) return br[3] + '-' + ('0' + br[2]).slice(-2) + '-' + ('0' + br[1]).slice(-2);
+    return t.slice(0, 10);
+  };
+  const chave = function(a){ return (dataIso(a.dataAtividade) || dataIso(a.registradoEm)) + ' ' + String(a.registradoEm || ''); };
   return SST_ALERTAS_.filter(function(a){
     if(niv && a.nivel !== niv) return false;
     if(suj && a.sujeito !== suj) return false;
@@ -7396,6 +7407,9 @@ function sstFiltrados_(){
       if(t.indexOf(q) < 0) return false;
     }
     return true;
+  }).sort(function(x, y){
+    const kx = chave(x), ky = chave(y);
+    return kx < ky ? (desc ? 1 : -1) : kx > ky ? (desc ? -1 : 1) : 0;
   });
 }
 function sstRenderAlertas_(){
