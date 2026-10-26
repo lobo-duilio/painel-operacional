@@ -1187,7 +1187,7 @@
         <button class="btn" id="notifBtn" onclick="toggleNotifPanel()">🔔 Prazos <span id="notifCount" class="notif-badge" style="display:none;">0</span></button>
         <div id="notifPanel" class="notif-panel"></div>
       </div>
-      <button class="btn" id="sstPushBtn" onclick="sstPushClique_()" title="Receber no celular os alertas de segurança (acidente, quase acidente, mal-estar)">🛡️ Ativar alertas SST</button>
+      <button class="btn" id="sstPushBtn" onclick="sstPushClique_()" title="Receber no celular os alertas de segurança (acidente, quase acidente, mal-estar)">🛡️ Alertas SST</button>
       <span class="meta" id="userInfo" style="margin-right:6px;"></span>
       <button class="btn" onclick="doLogout()">Sair</button>
       <button class="btn" id="usersBtn" onclick="openUserPanel()">Gerenciar usuários</button>
@@ -7271,13 +7271,6 @@ async function sstPushPost_(corpo){
   if(j.error) throw new Error(j.error);
   return j;
 }
-function sstPushBotao_(estado){
-  const b = document.getElementById('sstPushBtn');
-  if(!b) return;
-  const t = { ativo:'🛡️ Alertas SST: ativos', inativo:'🛡️ Ativar alertas SST', negado:'🛡️ Alertas SST bloqueados', aguarde:'🛡️ Ativando…' };
-  b.textContent = t[estado] || t.inativo;
-  b.dataset.estado = estado;
-}
 async function sstObterToken_(){
   if(!sstPushCfg_){
     const j = await sstPushPost_({ action:'pushConfig' });
@@ -7299,47 +7292,100 @@ async function sstRegistrarAparelho_(){
   try{ localStorage.setItem('sst-push-token', tk); }catch(e){}
   return tk;
 }
-async function sstPushClique_(){
+function sstPushBotao_(estado){
   const b = document.getElementById('sstPushBtn');
-  if(b && b.dataset.estado === 'aguarde') return;
-  if(!APPS_SCRIPT_URL || !SESSION){ alert('Entre no painel para ativar os alertas.'); return; }
-  if(sstEhIOS_() && !sstEhInstalado_()){
-    alert('No iPhone, os alertas só funcionam com o painel instalado na tela de início:\n\n1. Abra este painel no Safari.\n2. Toque em Compartilhar (quadrado com seta).\n3. Toque em "Adicionar à Tela de Início".\n4. Abra o painel pelo ícone criado e toque de novo em "Ativar alertas SST".\n\nRequer iOS 16.4 ou superior.');
-    return;
-  }
-  if(!sstPushSuportado_()){ alert('Este navegador não suporta notificações push. No Android, use o Chrome.'); return; }
-  if(b && b.dataset.estado === 'ativo'){
-    if(confirm('Os alertas estão ativos neste aparelho.\n\nOK = enviar uma notificação de teste agora\nCancelar = fechar')){
-      try{ const r = await sstPushPost_({ action:'testarPush' }); alert('Teste enviado: ' + r.resultado); }
-      catch(e){ alert('Falha no teste: ' + e.message); }
-    }
-    return;
-  }
+  if(!b) return;
+  const t = { ativo:'🛡️ Alertas SST: ligados', inativo:'🛡️ Alertas SST: desligados', negado:'🛡️ Alertas SST: bloqueados', aguarde:'🛡️ Aguarde…' };
+  const dica = { ativo:'Toque para DESLIGAR os alertas neste aparelho', inativo:'Toque para LIGAR os alertas neste aparelho', negado:'Bloqueado no navegador — toque para ver como liberar', aguarde:'' };
+  b.textContent = t[estado] || t.inativo;
+  b.title = dica[estado] || '';
+  b.dataset.estado = estado;
+}
+/* Desligado pelo próprio painel (não pelo navegador): impede a reativação automática ao entrar. */
+function sstDesligadoAqui_(){ try{ return localStorage.getItem('sst-push-desligado') === '1'; }catch(e){ return false; } }
+function sstMarcarDesligado_(sim){ try{ sim ? localStorage.setItem('sst-push-desligado','1') : localStorage.removeItem('sst-push-desligado'); }catch(e){} }
+function sstInstrucaoDesbloqueio_(){
+  if(sstEhIOS_()) return 'No iPhone: Ajustes → Notificações → Painel Operacional (ou o nome do ícone instalado) → ative "Permitir Notificações".';
+  if(sstEhInstalado_()) return 'Android (painel instalado): toque e segure o ícone do painel → "Informações do app" (ⓘ) → Notificações → ative.\nSe não aparecer, abra o painel no Chrome e siga: cadeado ao lado do endereço → Permissões → Notificações → Permitir.';
+  return 'No Chrome: toque no cadeado (ou ⓘ) ao lado do endereço do site → Permissões / Configurações do site → Notificações → Permitir.\nDepois volte aqui — o botão liga sozinho.';
+}
+async function sstLigar_(){
   sstPushBotao_('aguarde');
   try{
-    const perm = await Notification.requestPermission();
+    const perm = (Notification.permission === 'granted') ? 'granted' : await Notification.requestPermission();
     if(perm !== 'granted'){
       sstPushBotao_(perm === 'denied' ? 'negado' : 'inativo');
-      alert(perm === 'denied'
-        ? 'As notificações foram bloqueadas para este site. Libere em: configurações do navegador → Configurações do site → Notificações.'
-        : 'Permissão não concedida.');
+      if(perm === 'denied') alert('O navegador está bloqueando as notificações deste site.\n\n' + sstInstrucaoDesbloqueio_());
       return;
     }
     await sstRegistrarAparelho_();
+    sstMarcarDesligado_(false);
     sstPushBotao_('ativo');
-    alert('Alertas de segurança ativados neste aparelho. Toque no botão de novo para enviar um teste.');
+    if(confirm('Alertas SST LIGADOS neste aparelho.\n\nQuer receber uma notificação de teste agora?')){
+      try{ const r = await sstPushPost_({ action:'testarPush' }); alert('Teste enviado: ' + r.resultado); }
+      catch(e){ alert('Falha no teste: ' + e.message); }
+    }
   }catch(e){
     sstPushBotao_('inativo');
-    alert('Não foi possível ativar os alertas: ' + (e && e.message ? e.message : e));
+    alert('Não foi possível ligar os alertas: ' + (e && e.message ? e.message : e));
   }
 }
-/* Ao entrar no painel: se a permissão já foi dada, renova o registro em silêncio (token pode mudar). */
+async function sstDesligar_(){
+  sstPushBotao_('aguarde');
+  let tk = null;
+  try{ tk = localStorage.getItem('sst-push-token'); }catch(e){}
+  try{ if(tk) await sstPushPost_({ action:'removerPush', pushToken: tk }); }catch(e){ console.warn('SST removerPush:', e); }
+  /* Invalida o identificador no Firebase: mesmo que o servidor ainda o tenha, nada chega mais neste aparelho. */
+  try{
+    if(window.firebase && firebase.apps && firebase.apps.length) await firebase.messaging().deleteToken();
+    else if(navigator.serviceWorker){
+      const reg = await navigator.serviceWorker.getRegistration('./');
+      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      if(sub) await sub.unsubscribe();
+    }
+  }catch(e){ console.warn('SST deleteToken:', e); }
+  try{ localStorage.removeItem('sst-push-token'); }catch(e){}
+  sstMarcarDesligado_(true);
+  sstPushBotao_('inativo');
+  alert('Alertas SST DESLIGADOS neste aparelho. Toque no botão de novo para religar.');
+}
+async function sstPushClique_(){
+  const b = document.getElementById('sstPushBtn');
+  const est = b ? b.dataset.estado : '';
+  if(est === 'aguarde') return;
+  if(!APPS_SCRIPT_URL || !SESSION){ alert('Entre no painel para ligar os alertas.'); return; }
+  if(sstEhIOS_() && !sstEhInstalado_()){
+    alert('No iPhone, os alertas só funcionam com o painel instalado na tela de início:\n\n1. Abra este painel no Safari.\n2. Toque em Compartilhar (quadrado com seta).\n3. Toque em "Adicionar à Tela de Início".\n4. Abra o painel pelo ícone criado e toque de novo no botão de alertas.\n\nRequer iOS 16.4 ou superior.');
+    return;
+  }
+  if(!sstPushSuportado_()){ alert('Este navegador não suporta notificações push. No Android, use o Chrome.'); return; }
+  if(est === 'ativo') return sstDesligar_();
+  if(Notification.permission === 'denied'){
+    sstPushBotao_('negado');
+    alert('O navegador está bloqueando as notificações deste site, e por regra de segurança dos navegadores nenhum site consegue desfazer esse bloqueio sozinho — é preciso liberar uma única vez:\n\n' + sstInstrucaoDesbloqueio_() + '\n\nDepois disso, ligar e desligar passa a ser só tocar neste botão.');
+    return;
+  }
+  return sstLigar_();
+}
+/* Acompanha mudanças feitas nas configurações do navegador (ex.: usuário liberou o bloqueio e voltou ao painel). */
+let sstPermObservada_ = false;
+async function sstObservarPermissao_(){
+  if(sstPermObservada_ || !navigator.permissions || !navigator.permissions.query) return;
+  try{
+    const st = await navigator.permissions.query({ name:'notifications' });
+    sstPermObservada_ = true;
+    st.onchange = function(){ sstPushAoEntrar_(); };
+  }catch(e){}
+}
+/* Ao entrar no painel: se a permissão já foi dada e o usuário não desligou aqui, renova o registro em silêncio (token pode mudar). */
 async function sstPushAoEntrar_(){
   try{
+    sstObservarPermissao_();
     if(!SESSION || !APPS_SCRIPT_URL || !sstPushSuportado_()){ sstPushBotao_('inativo'); return; }
     if(Notification.permission === 'denied'){ sstPushBotao_('negado'); return; }
     if(Notification.permission !== 'granted'){ sstPushBotao_('inativo'); return; }
     if(sstEhIOS_() && !sstEhInstalado_()){ sstPushBotao_('inativo'); return; }
+    if(sstDesligadoAqui_()){ sstPushBotao_('inativo'); return; }
     await sstRegistrarAparelho_();
     sstPushBotao_('ativo');
   }catch(e){
@@ -7347,6 +7393,12 @@ async function sstPushAoEntrar_(){
     sstPushBotao_('inativo');
   }
 }
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible' && SESSION){
+    const b = document.getElementById('sstPushBtn');
+    if(b && b.dataset.estado === 'negado' && window.Notification && Notification.permission !== 'denied') sstPushAoEntrar_();
+  }
+});
 /* Caso o login automático tenha terminado antes deste bloco ser lido. */
 (function(){ const r = document.getElementById('appRoot'); if(SESSION && r && r.style.display === 'block') sstPushAoEntrar_(); })();
 </script>
