@@ -7307,7 +7307,7 @@ function sstMarcarDesligado_(sim){ try{ sim ? localStorage.setItem('sst-push-des
 function sstInstrucaoDesbloqueio_(){
   if(sstEhIOS_()) return 'No iPhone: Ajustes → Notificações → Painel Operacional (ou o nome do ícone instalado) → ative "Permitir Notificações".';
   if(sstEhInstalado_()) return 'Android (painel instalado): toque e segure o ícone do painel → "Informações do app" (ⓘ) → Notificações → ative.\nSe não aparecer, abra o painel no Chrome e siga: cadeado ao lado do endereço → Permissões → Notificações → Permitir.';
-  return 'No Chrome: toque no cadeado (ou ⓘ) ao lado do endereço do site → Permissões / Configurações do site → Notificações → Permitir.\nDepois volte aqui — o botão liga sozinho.';
+  return 'No Chrome (Android/tablet):\n1. Toque no menu ⋮ (três pontos, canto superior direito) → Configurações.\n2. Toque em "Configurações do site" → "Notificações".\n3. Na lista "Bloqueado", toque em ' + location.hostname + ' → "Permitir".\n\nSe não aparecer nessa lista: Configurações do site → "Todos os sites" → ' + location.hostname + ' → Notificações → Permitir (ou "Limpar e redefinir").\n\nDepois volte aqui e recarregue a página.';
 }
 async function sstLigar_(){
   sstPushBotao_('aguarde');
