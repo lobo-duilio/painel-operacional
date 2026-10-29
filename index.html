@@ -7512,7 +7512,9 @@ function sstRenderAlertas_(){
         '<div class="sst-aval"><select id="sstAv' + i + '"><option value="">— avaliar —</option>' +
         ['Confirmado', 'Falso positivo', 'Revisar'].map(function(o){ return '<option' + (a.avaliacao === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
         '</select><input id="sstNt' + i + '" placeholder="nota (opcional)">' +
-        '<button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstSalvarAvaliacao_(' + i + ')">Salvar</button></div>';
+        '<button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstSalvarAvaliacao_(' + i + ')">Salvar</button>' +
+        (a.avaliacao === 'Falso positivo' ? '<button class="btn" style="background:var(--red);color:#fff;border:0;" title="Arquiva o alerta: some do painel, mas continua na planilha" onclick="sstArquivarAlerta_(' + i + ')">🗑️ Excluir</button>' : '') +
+        '</div>';
     }
     return h + '</div>';
   }).join('');
@@ -7528,6 +7530,18 @@ async function sstSalvarAvaliacao_(i){
     await sstCarregarAlertas_();
   }catch(e){
     alert('Não foi possível salvar a avaliação: ' + (e.message || e));
+  }
+}
+async function sstArquivarAlerta_(i){
+  const a = (window.__sstVisiveis || [])[i];
+  if(!a || a.avaliacao !== 'Falso positivo') return;
+  const desc = (a.local || 'local não informado') + ' — ' + sstDataBr_(a.dataAtividade);
+  if(!confirm('Excluir este alerta (falso positivo)?\n\n' + desc + '\n\nEle some do painel, mas continua guardado na planilha para o sistema seguir aprendendo e não reenviar.')) return;
+  try{
+    await sstPushPost_({ action:'arquivarAlertaSST', id: a.enviado ? a.id : '', assinatura: a.enviado ? '' : a.chave });
+    await sstCarregarAlertas_();
+  }catch(e){
+    alert('Não foi possível excluir o alerta: ' + (e.message || e));
   }
 }
 </script>
