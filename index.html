@@ -1014,6 +1014,25 @@
   }
   .user-row .u-role.role-adm{background:var(--amber-light);color:#8A5A1E;}
 </style>
+<style>
+/* Gráficos da aba Alertas SST (03/11/2026) */
+.sst-graf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;margin-bottom:16px;}
+.sst-graf{position:relative;min-width:0;}
+.sst-graf.larga{grid-column:1/-1;}
+.sst-graf h3{font-size:13px;font-weight:700;margin:0 0 2px;}
+.sst-graf .nota{font-size:11.5px;color:var(--ink-soft);margin:0 0 10px;}
+.sst-graf svg{display:block;width:100%;height:auto;overflow:visible;}
+.sst-graf svg text{font-size:11px;fill:var(--ink-soft);font-family:inherit;}
+.sst-graf [data-tip]{cursor:default;}
+.sst-graf .clicavel{cursor:pointer;}
+.sst-graf .clicavel:hover rect.bar,.sst-graf [data-tip]:hover{opacity:.8;}
+.sst-graf .leg{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;}
+.sst-graf .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
+.sst-tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);padding:6px 9px;font-size:11.5px;color:var(--ink);white-space:nowrap;z-index:5;}
+.sst-tip b{display:block;color:var(--ink-soft);font-weight:600;margin-bottom:2px;}
+.sst-filtro-local{font-size:12px;margin:-6px 0 10px;color:var(--ink-soft);}
+.sst-filtro-local button{border:0;background:none;color:var(--navy);text-decoration:underline;cursor:pointer;font:inherit;padding:0 0 0 6px;}
+</style>
 </head>
 <body>
 
@@ -1475,6 +1494,7 @@
       </div>
     </div>
     <div id="sstResumo" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;"></div>
+    <div id="sstGraficos" class="sst-graf-grid"></div>
     <div id="sstLista"><p style="font-size:13px;color:var(--ink-soft);">Carregando…</p></div>
   </div>
 
@@ -7473,6 +7493,7 @@ function sstRenderAlertas_(){
   const resumo = document.getElementById('sstResumo');
   if(!lista) return;
   const itens = sstFiltrados_();
+  try{ sstDesenharGraficos_(itens); }catch(e){ console.error('gráficos SST', e); }
   const cont = { ACIDENTE:0, 'QUASE ACIDENTE':0, 'MAL-ESTAR':0 };
   let semAval = 0;
   itens.forEach(function(a){ if(cont[a.nivel] !== undefined) cont[a.nivel]++; if(!a.avaliacao) semAval++; });
@@ -7520,6 +7541,121 @@ function sstRenderAlertas_(){
   }).join('');
   window.__sstVisiveis = itens;
 }
+/* ===== Gráficos da aba Alertas SST (03/11/2026) =====
+   Seguem os mesmos filtros da aba (sstFiltrados_). Clique numa barra de
+   empreendimento para filtrar pelo local (preenche a busca); clique de novo para limpar. */
+const SST_COR_ = { 'ACIDENTE':'#B24A3C', 'QUASE ACIDENTE':'#C97A2B', 'MAL-ESTAR':'#B8960F' };
+const SST_NIV_ = ['ACIDENTE','QUASE ACIDENTE','MAL-ESTAR'];
+const SST_MES_ = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+let SST_GRAF_ITENS_ = [];
+function sstMesRot_(k){ return SST_MES_[+k.slice(5,7)-1] + '/' + k.slice(2,4); }
+function sstDesenharGraficos_(itens){
+  SST_GRAF_ITENS_ = itens;
+  const box = document.getElementById('sstGraficos');
+  if(!box) return;
+  const valid = itens.filter(function(a){ return /^\d{4}-\d{2}-\d{2}/.test(String(a.dataAtividade||'')); });
+  if(!valid.length){ box.innerHTML = ''; return; }
+  const busca = (document.getElementById('sstBusca').value || '').trim();
+  box.innerHTML =
+    '<div class="logtable-wrap sst-graf larga" id="sstGMes"></div>' +
+    '<div class="logtable-wrap sst-graf" id="sstGLocal"></div>' +
+    '<div class="logtable-wrap sst-graf" id="sstGAval"></div>';
+  sstGrafMes_(document.getElementById('sstGMes'), valid);
+  sstGrafLocais_(document.getElementById('sstGLocal'), valid, busca);
+  sstGrafAval_(document.getElementById('sstGAval'), itens);
+}
+function sstLarg_(el){ return Math.max(280, Math.floor(el.clientWidth - 2)); }
+function sstGrafMes_(el, itens){
+  const W = sstLarg_(el), H = 220, mg = { t:8, r:6, b:24, l:28 };
+  const ks = itens.map(function(a){ return String(a.dataAtividade).slice(0,7); }).sort();
+  const meses = []; let y = +ks[0].slice(0,4), m = +ks[0].slice(5,7); const fim = ks[ks.length-1];
+  while(meses.length < 240){ const k = y + '-' + String(m).padStart(2,'0'); meses.push(k); if(k >= fim) break; m++; if(m > 12){ m = 1; y++; } }
+  const tab = {}; meses.forEach(function(k){ tab[k] = { 'ACIDENTE':0, 'QUASE ACIDENTE':0, 'MAL-ESTAR':0 }; });
+  itens.forEach(function(a){ const t = tab[String(a.dataAtividade).slice(0,7)]; if(t && t[a.nivel] !== undefined) t[a.nivel]++; });
+  const tot = function(k){ return SST_NIV_.reduce(function(s,n){ return s + tab[k][n]; }, 0); };
+  let max = Math.max.apply(null, meses.map(tot)) || 1;
+  const passoY = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : 10; max = Math.ceil(max / passoY) * passoY;
+  const ih = H - mg.t - mg.b, iw = W - mg.l - mg.r, bw = iw / meses.length, bar = Math.min(32, bw * 0.75);
+  const yv = function(v){ return mg.t + ih - v / max * ih; };
+  let s = '';
+  for(let v = 0; v <= max; v += passoY){ s += '<line x1="' + mg.l + '" x2="' + (W - mg.r) + '" y1="' + yv(v) + '" y2="' + yv(v) + '" stroke="#ECEAE3"/><text x="' + (mg.l - 6) + '" y="' + (yv(v) + 4) + '" text-anchor="end">' + v + '</text>'; }
+  const passoX = Math.ceil(meses.length / Math.max(1, Math.floor(iw / 46)));
+  meses.forEach(function(k, i){
+    const x = mg.l + i * bw + (bw - bar) / 2; let acum = 0;
+    const tip = sstMesRot_(k) + '|' + SST_NIV_.map(function(n){ return n.charAt(0) + n.slice(1).toLowerCase() + ': ' + tab[k][n]; }).join('|') + '|Total: ' + tot(k);
+    s += '<g data-tip="' + sstEsc_(tip) + '"><rect x="' + (mg.l + i * bw) + '" y="' + mg.t + '" width="' + bw + '" height="' + ih + '" fill="transparent"/>';
+    SST_NIV_.forEach(function(n){ const v = tab[k][n]; if(!v) return; const y1 = yv(acum + v), y0 = yv(acum); acum += v;
+      s += '<rect x="' + x + '" y="' + y1 + '" width="' + bar + '" height="' + Math.max(0, y0 - y1) + '" rx="2" fill="' + SST_COR_[n] + '"/>'; });
+    s += '</g>';
+    if(i % passoX === 0) s += '<text x="' + (x + bar / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + sstMesRot_(k) + '</text>';
+  });
+  el.innerHTML = '<h3>Alertas por mês</h3><p class="nota">Pela data da atividade, nos filtros acima. Passe o mouse para ver o mês.</p>' +
+    '<div class="leg">' + SST_NIV_.map(function(n){ return '<span><i style="background:' + SST_COR_[n] + '"></i>' + n.charAt(0) + n.slice(1).toLowerCase() + '</span>'; }).join('') + '</div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Alertas por mês">' + s + '</svg>';
+  sstLigarTip_(el);
+}
+function sstGrafLocais_(el, itens, busca){
+  const g = {};
+  itens.forEach(function(a){ const l = String(a.local || '').trim() || '(sem local)'; g[l] = g[l] || { n:0, dias:{}, conf:0 }; g[l].n++; g[l].dias[String(a.dataAtividade).slice(0,10)] = 1; if(a.avaliacao === 'Confirmado') g[l].conf++; });
+  const top = Object.keys(g).map(function(l){ return [l, g[l]]; }).sort(function(a, b){ return b[1].n - a[1].n || a[0].localeCompare(b[0]); }).slice(0, 10);
+  const W = sstLarg_(el), lh = 26, H = top.length * lh + 4, lw = Math.min(W * 0.46, 190), max = top[0][1].n;
+  let s = '';
+  top.forEach(function(e, i){
+    const y = i * lh, w = Math.max(2, (W - lw - 34) * e[1].n / max), ativo = busca && busca.toLowerCase() === e[0].toLowerCase();
+    const nome = e[0].length > 28 ? e[0].slice(0, 27) + '…' : e[0];
+    const tip = e[0] + '|' + e[1].n + ' alertas|' + Object.keys(e[1].dias).length + ' dias diferentes|' + e[1].conf + ' confirmados|Clique para filtrar';
+    s += '<g class="clicavel" data-local="' + sstEsc_(e[0]) + '" data-tip="' + sstEsc_(tip) + '" tabindex="0" role="button">' +
+      '<rect x="0" y="' + y + '" width="' + W + '" height="' + lh + '" fill="transparent"/>' +
+      '<text x="' + (lw - 8) + '" y="' + (y + 17) + '" text-anchor="end" style="' + (ativo ? 'fill:var(--ink);font-weight:700;' : '') + '">' + sstEsc_(nome) + '</text>' +
+      '<rect class="bar" x="' + lw + '" y="' + (y + 4) + '" width="' + w + '" height="18" rx="3" fill="' + (busca && !ativo ? '#C9CDD3' : 'var(--navy)') + '"/>' +
+      '<text x="' + (lw + w + 6) + '" y="' + (y + 17) + '">' + e[1].n + '</text></g>';
+  });
+  el.innerHTML = '<h3>Empreendimentos com mais alertas</h3><p class="nota">Os 10 primeiros nos filtros acima. Clique na barra para filtrar pelo local.</p>' +
+    (busca ? '<div class="sst-filtro-local">Filtrando por: <b>' + sstEsc_(busca) + '</b><button type="button" id="sstLimparLocal">limpar</button></div>' : '') +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Empreendimentos com mais alertas">' + s + '</svg>';
+  const filtrar = function(l){ const b = document.getElementById('sstBusca'); b.value = (b.value.trim().toLowerCase() === l.toLowerCase()) ? '' : l; sstRenderAlertas_(); };
+  el.querySelectorAll('g.clicavel').forEach(function(n){
+    n.addEventListener('click', function(){ filtrar(n.getAttribute('data-local')); });
+    n.addEventListener('keydown', function(ev){ if(ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); filtrar(n.getAttribute('data-local')); } });
+  });
+  const lim = el.querySelector('#sstLimparLocal');
+  if(lim) lim.addEventListener('click', function(){ document.getElementById('sstBusca').value = ''; sstRenderAlertas_(); });
+  sstLigarTip_(el);
+}
+function sstGrafAval_(el, itens){
+  const cats = [['Confirmado','#3E7D4E'], ['', '#9AA1AB'], ['Revisar','#C97A2B'], ['Falso positivo','#B24A3C']];
+  const tot = itens.length || 1, W = sstLarg_(el), lh = 48, H = cats.length * lh;
+  let s = '';
+  cats.forEach(function(c, i){
+    const n = itens.filter(function(a){ return (a.avaliacao || '') === c[0]; }).length, y = i * lh, w = (W - 74) * n / tot;
+    s += '<g data-tip="' + sstEsc_((c[0] || 'Não avaliado') + '|' + n + ' de ' + itens.length + ' alertas') + '">' +
+      '<text x="0" y="' + (y + 14) + '" style="fill:var(--ink);">' + (c[0] || 'Não avaliado') + '</text>' +
+      '<rect x="0" y="' + (y + 21) + '" width="' + (W - 74) + '" height="14" rx="3" fill="#ECEAE3"/>' +
+      '<rect x="0" y="' + (y + 21) + '" width="' + w + '" height="14" rx="3" fill="' + c[1] + '"/>' +
+      '<text x="' + (W - 68) + '" y="' + (y + 33) + '">' + n + ' · ' + Math.round(n / tot * 100) + '%</text></g>';
+  });
+  el.innerHTML = '<h3>Situação da avaliação</h3><p class="nota">Quanto dos alertas filtrados já foi revisado pela gerência.</p>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Situação da avaliação">' + s + '</svg>';
+  sstLigarTip_(el);
+}
+function sstLigarTip_(el){
+  let tip = el.querySelector('.sst-tip');
+  if(!tip){ tip = document.createElement('div'); tip.className = 'sst-tip'; tip.hidden = true; el.appendChild(tip); }
+  el.querySelectorAll('[data-tip]').forEach(function(n){
+    n.addEventListener('mousemove', function(ev){
+      const p = n.getAttribute('data-tip').split('|');
+      tip.innerHTML = '<b>' + sstEsc_(p[0]) + '</b>' + p.slice(1).map(function(l){ return '<div>' + sstEsc_(l) + '</div>'; }).join('');
+      tip.hidden = false;
+      const r = el.getBoundingClientRect(); let x = ev.clientX - r.left + 12, y = ev.clientY - r.top - tip.offsetHeight - 8;
+      if(x + tip.offsetWidth > r.width) x = Math.max(0, ev.clientX - r.left - tip.offsetWidth - 12);
+      if(y < 0) y = ev.clientY - r.top + 14;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    });
+    n.addEventListener('mouseleave', function(){ tip.hidden = true; });
+  });
+}
+let sstGrafResize_ = null;
+window.addEventListener('resize', function(){ clearTimeout(sstGrafResize_); sstGrafResize_ = setTimeout(function(){ const v = document.getElementById('view-alertassst'); if(v && v.offsetParent && SST_GRAF_ITENS_.length) sstDesenharGraficos_(SST_GRAF_ITENS_); }, 200); });
 async function sstSalvarAvaliacao_(i){
   const a = (window.__sstVisiveis || [])[i];
   if(!a) return;
