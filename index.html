@@ -7478,6 +7478,7 @@ function sstFiltrados_(){
     if(av === '-' && a.avaliacao) return false;
     if(av && av !== '-' && a.avaliacao !== av) return false;
     if(limite && String(a.registradoEm).slice(0, 10) < limite) return false;
+    if(SST_LOCAL_SEL_ !== null && String(a.local || '').trim() !== SST_LOCAL_SEL_) return false;
     if(q){
       const t = [a.id, a.local, a.pessoas, a.preenchidoPor, a.observacao, a.aba, a.origem, a.termos, a.nivel].join(' ').toLowerCase();
       if(t.indexOf(q) < 0) return false;
@@ -7543,11 +7544,12 @@ function sstRenderAlertas_(){
 }
 /* ===== Gráficos da aba Alertas SST (03/11/2026) =====
    Seguem os mesmos filtros da aba (sstFiltrados_). Clique numa barra de
-   empreendimento para filtrar pelo local (preenche a busca); clique de novo para limpar. */
+   empreendimento para filtrar só aquele local (filtro exato, separado da busca); clique de novo para limpar. */
 const SST_COR_ = { 'ACIDENTE':'#B24A3C', 'QUASE ACIDENTE':'#C97A2B', 'MAL-ESTAR':'#B8960F' };
 const SST_NIV_ = ['ACIDENTE','QUASE ACIDENTE','MAL-ESTAR'];
 const SST_MES_ = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 let SST_GRAF_ITENS_ = [];
+let SST_LOCAL_SEL_ = null; /* filtro exato por empreendimento (clique no gráfico); '' = sem local */
 function sstMesRot_(k){ return SST_MES_[+k.slice(5,7)-1] + '/' + k.slice(2,4); }
 function sstDesenharGraficos_(itens){
   SST_GRAF_ITENS_ = itens;
@@ -7555,13 +7557,12 @@ function sstDesenharGraficos_(itens){
   if(!box) return;
   const valid = itens.filter(function(a){ return /^\d{4}-\d{2}-\d{2}/.test(String(a.dataAtividade||'')); });
   if(!valid.length){ box.innerHTML = ''; return; }
-  const busca = (document.getElementById('sstBusca').value || '').trim();
   box.innerHTML =
     '<div class="logtable-wrap sst-graf larga" id="sstGMes"></div>' +
     '<div class="logtable-wrap sst-graf" id="sstGLocal"></div>' +
     '<div class="logtable-wrap sst-graf" id="sstGAval"></div>';
   sstGrafMes_(document.getElementById('sstGMes'), valid);
-  sstGrafLocais_(document.getElementById('sstGLocal'), valid, busca);
+  sstGrafLocais_(document.getElementById('sstGLocal'), valid, SST_LOCAL_SEL_);
   sstGrafAval_(document.getElementById('sstGAval'), itens);
 }
 function sstLarg_(el){ return Math.max(280, Math.floor(el.clientWidth - 2)); }
@@ -7594,32 +7595,33 @@ function sstGrafMes_(el, itens){
     '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Alertas por mês">' + s + '</svg>';
   sstLigarTip_(el);
 }
-function sstGrafLocais_(el, itens, busca){
+function sstGrafLocais_(el, itens, sel){
   const g = {};
-  itens.forEach(function(a){ const l = String(a.local || '').trim() || '(sem local)'; g[l] = g[l] || { n:0, dias:{}, conf:0 }; g[l].n++; g[l].dias[String(a.dataAtividade).slice(0,10)] = 1; if(a.avaliacao === 'Confirmado') g[l].conf++; });
+  itens.forEach(function(a){ const l = String(a.local || '').trim(); g[l] = g[l] || { n:0, dias:{}, conf:0 }; g[l].n++; g[l].dias[String(a.dataAtividade).slice(0,10)] = 1; if(a.avaliacao === 'Confirmado') g[l].conf++; });
   const top = Object.keys(g).map(function(l){ return [l, g[l]]; }).sort(function(a, b){ return b[1].n - a[1].n || a[0].localeCompare(b[0]); }).slice(0, 10);
   const W = sstLarg_(el), lh = 26, H = top.length * lh + 4, lw = Math.min(W * 0.46, 190), max = top[0][1].n;
   let s = '';
   top.forEach(function(e, i){
-    const y = i * lh, w = Math.max(2, (W - lw - 34) * e[1].n / max), ativo = busca && busca.toLowerCase() === e[0].toLowerCase();
-    const nome = e[0].length > 28 ? e[0].slice(0, 27) + '…' : e[0];
-    const tip = e[0] + '|' + e[1].n + ' alertas|' + Object.keys(e[1].dias).length + ' dias diferentes|' + e[1].conf + ' confirmados|Clique para filtrar';
+    const y = i * lh, w = Math.max(2, (W - lw - 34) * e[1].n / max), ativo = sel === e[0];
+    const rot = e[0] || '(sem local)';
+    const nome = rot.length > 28 ? rot.slice(0, 27) + '…' : rot;
+    const tip = rot + '|' + e[1].n + ' alertas|' + Object.keys(e[1].dias).length + ' dias diferentes|' + e[1].conf + ' confirmados|' + (ativo ? 'Clique para limpar o filtro' : 'Clique para filtrar');
     s += '<g class="clicavel" data-local="' + sstEsc_(e[0]) + '" data-tip="' + sstEsc_(tip) + '" tabindex="0" role="button">' +
       '<rect x="0" y="' + y + '" width="' + W + '" height="' + lh + '" fill="transparent"/>' +
       '<text x="' + (lw - 8) + '" y="' + (y + 17) + '" text-anchor="end" style="' + (ativo ? 'fill:var(--ink);font-weight:700;' : '') + '">' + sstEsc_(nome) + '</text>' +
-      '<rect class="bar" x="' + lw + '" y="' + (y + 4) + '" width="' + w + '" height="18" rx="3" fill="' + (busca && !ativo ? '#C9CDD3' : 'var(--navy)') + '"/>' +
+      '<rect class="bar" x="' + lw + '" y="' + (y + 4) + '" width="' + w + '" height="18" rx="3" fill="' + (sel !== null && !ativo ? '#C9CDD3' : 'var(--navy)') + '"/>' +
       '<text x="' + (lw + w + 6) + '" y="' + (y + 17) + '">' + e[1].n + '</text></g>';
   });
   el.innerHTML = '<h3>Empreendimentos com mais alertas</h3><p class="nota">Os 10 primeiros nos filtros acima. Clique na barra para filtrar pelo local.</p>' +
-    (busca ? '<div class="sst-filtro-local">Filtrando por: <b>' + sstEsc_(busca) + '</b><button type="button" id="sstLimparLocal">limpar</button></div>' : '') +
+    (sel !== null ? '<div class="sst-filtro-local">Filtrando por: <b>' + sstEsc_(sel || '(sem local)') + '</b><button type="button" id="sstLimparLocal">limpar</button></div>' : '') +
     '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Empreendimentos com mais alertas">' + s + '</svg>';
-  const filtrar = function(l){ const b = document.getElementById('sstBusca'); b.value = (b.value.trim().toLowerCase() === l.toLowerCase()) ? '' : l; sstRenderAlertas_(); };
+  const filtrar = function(l){ SST_LOCAL_SEL_ = (SST_LOCAL_SEL_ === l) ? null : l; sstRenderAlertas_(); };
   el.querySelectorAll('g.clicavel').forEach(function(n){
     n.addEventListener('click', function(){ filtrar(n.getAttribute('data-local')); });
     n.addEventListener('keydown', function(ev){ if(ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); filtrar(n.getAttribute('data-local')); } });
   });
   const lim = el.querySelector('#sstLimparLocal');
-  if(lim) lim.addEventListener('click', function(){ document.getElementById('sstBusca').value = ''; sstRenderAlertas_(); });
+  if(lim) lim.addEventListener('click', function(){ SST_LOCAL_SEL_ = null; sstRenderAlertas_(); });
   sstLigarTip_(el);
 }
 function sstGrafAval_(el, itens){
