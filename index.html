@@ -2133,7 +2133,7 @@ async function storageGet(key){
   if(APPS_SCRIPT_URL){
     let res, json;
     try{
-      res = await fetch(APPS_SCRIPT_URL + '?action=get&key=' + encodeURIComponent(key) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : '') + '&_=' + Date.now(), { cache: 'no-store' });
+      res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'get', key: key, token: SESSION ? SESSION.token : '' }) });
     }catch(e){
       throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
     }
@@ -2170,7 +2170,7 @@ async function storageGetBatch(keys){
   if(!APPS_SCRIPT_URL || keys.length === 0) return {};
   let res, json;
   try{
-    res = await fetch(APPS_SCRIPT_URL + '?action=get&keys=' + encodeURIComponent(keys.join(',')) + '&token=' + encodeURIComponent(SESSION ? SESSION.token : '') + '&_=' + Date.now(), { cache: 'no-store' });
+    res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'get', keys: keys.join(','), token: SESSION ? SESSION.token : '' }) });
   }catch(e){
     throw new Error('CONN_ERROR: falha de rede/CORS (' + (e.message||e) + ')');
   }
@@ -5231,12 +5231,32 @@ async function loadLogData(key){
   }
 }
 
-async function saveLog(key){
+/** Com "ops", grava só as linhas alteradas (patchLog). Sem ops, ou se o
+  * servidor não localizar a linha (id provisório), grava a lista inteira. */
+async function patchLog_(key, ops){
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'patchLog', key: 'log-' + key, ops: ops, token: SESSION ? SESSION.token : '' })
+  });
+  if(!res.ok) throw new Error('servidor respondeu status ' + res.status);
+  const json = await res.json();
+  if(json.error === 'unauthenticated'){ handleSessionExpired(); throw new Error('AUTH_EXPIRED'); }
+  return json;
+}
+
+async function saveLog(key, ops){
   try{
-    await storageSet('log-'+key, JSON.stringify(logData[key]));
+    let completo = !ops || !APPS_SCRIPT_URL;
+    if(!completo){
+      const r = await patchLog_(key, ops);
+      if(r.error === 'NAO_ENCONTRADO') completo = true;
+      else if(r.error) throw new Error(r.error);
+    }
+    if(completo) await storageSet('log-'+key, JSON.stringify(logData[key]));
   }catch(e){
     console.error('Erro ao salvar', key, e);
-    if(String(e && e.message) !== 'AUTH_EXPIRED') avisoFalhaSalvar_(key);
+    if(String(e && e.message) !== 'AUTH_EXPIRED') avisoFalhaSalvar_(key, ops);
     return;
   }
   const av = document.getElementById('aviso-falha-salvar-' + key);
@@ -5244,7 +5264,7 @@ async function saveLog(key){
 }
 
 /** Falha de gravação nunca pode ser silenciosa: aviso fixo com nova tentativa. */
-function avisoFalhaSalvar_(key){
+function avisoFalhaSalvar_(key, ops){
   const id = 'aviso-falha-salvar-' + key;
   if(document.getElementById(id)) return;
   const av = document.createElement('div');
@@ -5256,7 +5276,7 @@ function avisoFalhaSalvar_(key){
   const btn = document.createElement('button');
   btn.textContent = 'Tentar de novo';
   btn.style.cssText = 'background:#fff;color:#b3261e;border:0;border-radius:6px;padding:8px 12px;font-weight:600;cursor:pointer';
-  btn.addEventListener('click', function(){ av.remove(); saveLog(key); });
+  btn.addEventListener('click', function(){ av.remove(); saveLog(key, ops); });
   av.appendChild(txt); av.appendChild(btn);
   document.body.appendChild(av);
 }
@@ -5737,7 +5757,7 @@ function addLogRow(key){
   });
   if(!hasValue) return;
   logData[key].push(newRow);
-  saveLog(key);
+  saveLog(key, [{ op: 'add', row: newRow }]);
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
@@ -5753,7 +5773,7 @@ function updateLogRow(key, id, field, value){
   const row = (logData[key] || []).find(r=>mesmoLogId_(r.id, id));
   if(!row){ alert('Não foi possível localizar este item (a lista pode ter sido alterada). Recarregue a página e tente de novo.'); return; }
   row[field] = value;
-  saveLog(key);
+  saveLog(key, [{ op: 'update', id: id, campos: { [field]: value } }]);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
   if(key === 'aves-treinamento') { renderAvesWeightChart(); renderAvesPesagemResumo(); }
@@ -5774,7 +5794,7 @@ function deleteLogRow(key, id){
   const restantes = (logData[key] || []).filter(r=>!mesmoLogId_(r.id, id));
   if(antes - restantes.length !== 1){ alert('Remoção cancelada: o identificador deste item não é único ('+(antes - restantes.length)+' linhas correspondentes). Nada foi apagado. Recarregue a página e tente de novo.'); renderLogTable(key); return; }
   logData[key] = restantes;
-  saveLog(key);
+  saveLog(key, [{ op: 'delete', id: id }]);
   renderLogTable(key);
   if(key.startsWith('roedores-')) renderEstoque();
   if(key.startsWith('armadilhas-')) renderEstoqueArmadilhas();
