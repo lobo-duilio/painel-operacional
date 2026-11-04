@@ -1,0 +1,25 @@
+name: Verificar painel
+on:
+  push:
+  pull_request:
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Sintaxe e regras do index.html
+        run: |
+          node -e "
+          const fs=require('fs');
+          const h=fs.readFileSync('index.html','utf8');
+          const b=[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
+          b.forEach((s,i)=>fs.writeFileSync('/tmp/b'+i+'.js',s));
+          fs.writeFileSync('/tmp/n',String(b.length));
+          if(/[?&]token=/.test(h)) throw new Error('token na URL');
+          if(!h.includes('avisoFalhaSalvar_')||!h.includes('patchLog_')) throw new Error('protecao de gravacao removida');
+          "
+          for i in $(seq 0 $(( $(cat /tmp/n) - 1 ))); do node --check /tmp/b$i.js; done
+          node --check sw-alertas.js
