@@ -5236,7 +5236,29 @@ async function saveLog(key){
     await storageSet('log-'+key, JSON.stringify(logData[key]));
   }catch(e){
     console.error('Erro ao salvar', key, e);
+    if(String(e && e.message) !== 'AUTH_EXPIRED') avisoFalhaSalvar_(key);
+    return;
   }
+  const av = document.getElementById('aviso-falha-salvar-' + key);
+  if(av) av.remove();
+}
+
+/** Falha de gravação nunca pode ser silenciosa: aviso fixo com nova tentativa. */
+function avisoFalhaSalvar_(key){
+  const id = 'aviso-falha-salvar-' + key;
+  if(document.getElementById(id)) return;
+  const av = document.createElement('div');
+  av.id = id;
+  av.setAttribute('role', 'alert');
+  av.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:99999;background:#b3261e;color:#fff;padding:12px 14px;border-radius:8px;font-size:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,.35)';
+  const txt = document.createElement('span');
+  txt.textContent = 'Não foi possível salvar. Este dado ainda NÃO está na planilha; não feche o painel.';
+  const btn = document.createElement('button');
+  btn.textContent = 'Tentar de novo';
+  btn.style.cssText = 'background:#fff;color:#b3261e;border:0;border-radius:6px;padding:8px 12px;font-weight:600;cursor:pointer';
+  btn.addEventListener('click', function(){ av.remove(); saveLog(key); });
+  av.appendChild(txt); av.appendChild(btn);
+  document.body.appendChild(av);
 }
 
 /** Lista de opções únicas pra um campo do tipo "select" (ex: Item, puxado do catálogo de Itens). */
@@ -7461,7 +7483,8 @@ function sstFiltrados_(){
   const suj = document.getElementById('sstSujeito').value;
   const av = document.getElementById('sstAval').value;
   const dias = Number(document.getElementById('sstPeriodo').value || 0);
-  const limite = dias ? new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10) : '';
+  const dLimite_ = new Date(Date.now() - dias * 86400000);
+  const limite = dias ? dLimite_.getFullYear() + '-' + String(dLimite_.getMonth() + 1).padStart(2, '0') + '-' + String(dLimite_.getDate()).padStart(2, '0') : '';
   const ordemEl = document.getElementById('sstOrdem');
   const desc = !!(ordemEl && ordemEl.value === 'desc');
   /* Ordem de acontecimento: data da atividade; empate → horário em que foi registrado. */
