@@ -3416,6 +3416,27 @@ let faunaTecnicoFiltro = {};
   * FAUNA_CELULA_DOIS_TECNICOS abaixo. "Weudes" e "Felipe Silva" (1
   * ocorrência cada) não têm evidência de serem duplicatas de ninguém e
   * foram mantidos como estão. */
+/** Cadastro único (aba Usuarios): nome oficial, status e apelidos. */
+let COLABORADORES = [];
+let COLAB_APELIDOS = {};
+async function carregarColaboradores_(){
+  try{
+    const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'listarColaboradores', token: SESSION ? SESSION.token : '' }) });
+    const json = await res.json();
+    if(!json.ok) return;
+    COLABORADORES = json.colaboradores || [];
+    const mapa = {};
+    COLABORADORES.forEach(c => {
+      mapa[normalizarChaveTecnico(c.nome)] = c.nome;
+      String(c.apelidos || '').split(';').map(a => a.trim()).filter(Boolean).forEach(a => { mapa[normalizarChaveTecnico(a)] = c.nome; });
+    });
+    COLAB_APELIDOS = mapa;
+  }catch(e){ console.error('Colaboradores:', e); }
+}
+function colaboradoresAtivos_(){
+  return COLABORADORES.filter(c => c.status !== 'inativo').map(c => c.nome);
+}
+
 const FAUNA_TECNICO_CANONICAL = {
   'matheus': 'Matheus Silva',
   'mateus': 'Matheus Silva',
@@ -3475,7 +3496,7 @@ function normalizarChaveTecnico(s){
   * original (só com espaços nas pontas removidos). */
 function canonicalizarNomeTecnico(nome){
   const chave = normalizarChaveTecnico(nome);
-  return FAUNA_TECNICO_CANONICAL[chave] || nome.trim();
+  return COLAB_APELIDOS[chave] || FAUNA_TECNICO_CANONICAL[chave] || nome.trim();
 }
 
 /** Casos confirmados com o usuário em 16/09/2026 onde uma única célula do
@@ -5301,6 +5322,7 @@ function reconhecimentoNomesBrutos_(){
   const out = [];
   const add = n => { const nome = String(n == null ? '' : n).trim().replace(/\s+/g,' '); if(nome) out.push(nome); };
   Object.keys(AUDITORIA_MATRIZ || {}).forEach(add);
+  colaboradoresAtivos_().forEach(add);
   (logData['reconhecimento-colaboradores'] || []).forEach(r => add(r.nome));
   (logData['aves-cadastro-responsaveis'] || []).forEach(r => add(r.nome));
   // Quem já tem registro no Reconhecimento entra na lista mesmo que não
@@ -5566,6 +5588,7 @@ function renderDimensionamentoPainel(){
 
 function getSelectOptionsForCol(c){
   if(c.options) return c.options;
+  if(c.sourceKey === 'aves-cadastro-responsaveis' && colaboradoresAtivos_().length) return colaboradoresAtivos_().sort();
   const rows = logData[c.sourceKey] || [];
   const valores = rows.map(r => r[c.sourceField]).filter(Boolean);
   return Array.from(new Set(valores)).sort();
@@ -7001,6 +7024,7 @@ async function excluirAuditoria(id){
  * usadas normalmente para recarregas pontuais depois disso.
  */
 async function bulkLoadInitialData(){
+  await carregarColaboradores_();
   const firstBatchKeys = ['painel-atividades', 'abas-personalizadas', 'checklist-respostas', 'log-custom-checklist-resolvidos', 'log-custom-auditoria-matriz', 'log-contratos-alerta-config', 'log-custom-dimensionamento-controles'];
   Object.keys(LOG_CONFIGS).forEach(k => firstBatchKeys.push('log-' + k));
 
