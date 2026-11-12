@@ -5482,7 +5482,9 @@ function reconhecimentoOcorrenciasHtml(incidentes){
     return m ? m[3] + '/' + m[2] + '/' + m[1] : esc(d || '—');
   };
   const lista = (incidentes || []).slice().sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));
-  if(!lista.length) return '';
+  let pendSst = '';
+  try{ pendSst = reconPendentesSstHtml_(); }catch(e){}
+  if(!lista.length) return pendSst;
   const selo = t => {
     if(t === 'Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--red-light);color:var(--red);">Acidente</span>';
     if(t === 'Quase Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--amber-light);color:var(--amber);">Quase acidente</span>';
@@ -5506,7 +5508,7 @@ function reconhecimentoOcorrenciasHtml(incidentes){
         <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th><th>Alerta SST</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
-    </div>`;
+    </div>${pendSst}`;
 }
 
 /** Calculadora de dimensionamento de equipe, por controle: cada controle
@@ -7516,6 +7518,7 @@ async function sstCarregarAlertas_(){
     SST_ALERTAS_ = j.alertas || [];
     SST_ALERTAS_ADMIN_ = !!j.admin;
     SST_ALERTAS_CARREGADO_ = true;
+    try{ if(!SST_TODOS_) reconGarantirAlertasSst_(); }catch(e){}
     const hw = document.getElementById('sstHistWrap');
     if(hw) hw.style.display = SST_ALERTAS_ADMIN_ ? 'flex' : 'none';
     sstRenderAlertas_();
@@ -7768,18 +7771,28 @@ function sstDataIso_(v){
   if(br) return br[3] + '-' + ('0' + br[2]).slice(-2) + '-' + ('0' + br[1]).slice(-2);
   return t.slice(0, 10);
 }
+function sstRef_(a){ return 'ref:' + String(a.chave || a.assinatura || a.id || '').slice(0, 8); }
 function sstMesmaOcorrencia_(a, inc){
+  const desc = String(inc.descricao || '');
+  const ref = sstRef_(a);
+  if(ref.length > 4 && desc.indexOf(ref) !== -1) return true;
+  if(sstDataIso_(a.dataAtividade) !== sstDataIso_(inc.data)) return false;
   const l = sstNorm_(a.local);
-  return !!l && sstDataIso_(a.dataAtividade) === sstDataIso_(inc.data) && l === sstNorm_(inc.empreendimento);
+  if(l) return l === sstNorm_(inc.empreendimento);
+  /* Sem empreendimento (ex.: Feedback de aves): mesma data, sem local e colaborador entre os envolvidos. */
+  if(sstNorm_(inc.empreendimento)) return false;
+  const r = sstNorm_(reconhecimentoNomeCanonico(inc.responsavel));
+  return !!r && sstPessoasDoAlerta_(a, true).some(function(n){ return sstNorm_(n) === r; });
 }
 function sstIncidentesDoAlerta_(a){
   return (logData['reconhecimento-incidentes'] || []).filter(function(inc){ return sstMesmaOcorrencia_(a, inc); });
 }
+function sstTodosAlertas_(){ return (typeof SST_TODOS_ !== 'undefined' && SST_TODOS_) ? SST_TODOS_ : (SST_ALERTAS_ || []); }
 function sstAlertasDoIncidente_(inc){
-  return (SST_ALERTAS_ || []).filter(function(a){ return sstMesmaOcorrencia_(a, inc); });
+  return sstTodosAlertas_().filter(function(a){ return sstMesmaOcorrencia_(a, inc); });
 }
-function sstPessoasDoAlerta_(a){
-  if(a.sujeito === 'AVE') return [];
+function sstPessoasDoAlerta_(a, mesmoAve){
+  if(a.sujeito === 'AVE' && !mesmoAve) return [];
   const vistos = {};
   return String(a.pessoas || '').split(/\s*(?:,|;|\/|\se\s)\s*/).map(function(n){ return reconhecimentoNomeCanonico(n); })
     .filter(function(n){ if(!n || vistos[n]) return false; vistos[n] = 1; return true; });
@@ -7800,24 +7813,74 @@ async function sstRegistrarNoReconhecimento_(i){
   if(!canManageList('reconhecimento-incidentes')){ alert('Somente administradores podem registrar incidentes.'); return; }
   const tipo = a.nivel === 'QUASE ACIDENTE' ? 'Quase Acidente' : 'Acidente';
   const pessoas = sstPessoasDoAlerta_(a);
-  const alvo = pessoas.length ? pessoas : [''];
   const msg = 'Registrar no Reconhecimento como "' + tipo + '"?\n\n' + (a.local || 'local não informado') + ' — ' + sstDataBr_(sstDataIso_(a.dataAtividade)) +
     '\nColaborador(es): ' + (pessoas.join(', ') || 'nenhum (só ave)') +
     (a.nivel === 'MAL-ESTAR' ? '\n\nMal-estar entra como "Acidente" (mesmo critério do histórico) e zera o contador de dias sem incidente.' : '') +
     '\n\nA gravidade fica em branco para você preencher na aba Reconhecimento.';
   if(!confirm(msg)) return;
-  logData['reconhecimento-incidentes'] = logData['reconhecimento-incidentes'] || [];
-  const ops = [];
-  const base = Date.now();
-  alvo.forEach(function(nome, k){
-    const row = { id: base + k, data: sstDataIso_(a.dataAtividade), tipo: tipo, gravidade: '', empreendimento: String(a.local || '').trim(), responsavel: nome, ave: '',
-      descricao: '[Alerta SST' + (a.enviado ? ' #' + a.id : '') + ' · ' + a.nivel + '] ' + String(a.observacao || '').trim() };
-    logData['reconhecimento-incidentes'].push(row);
-    ops.push({ op: 'add', row: row });
-  });
+  const ops = sstLinhasDoAlerta_(a, Date.now());
   await saveLog('reconhecimento-incidentes', ops);
   try{ renderLogTable('reconhecimento-incidentes'); renderReconhecimentoPainel(); }catch(e){}
   sstRenderAlertas_();
+}
+function sstLinhasDoAlerta_(a, base){
+  logData['reconhecimento-incidentes'] = logData['reconhecimento-incidentes'] || [];
+  const tipo = a.nivel === 'QUASE ACIDENTE' ? 'Quase Acidente' : 'Acidente';
+  const pessoas = sstPessoasDoAlerta_(a);
+  const alvo = pessoas.length ? pessoas : [''];
+  const ops = [];
+  alvo.forEach(function(nome, k){
+    const row = { id: base + k, data: sstDataIso_(a.dataAtividade), tipo: tipo, gravidade: '', empreendimento: String(a.local || '').trim(), responsavel: nome, ave: '',
+      descricao: '[Alerta SST' + (a.enviado ? ' #' + a.id : ' histórico') + ' · ' + a.nivel + (a.sujeito === 'AVE' ? ' · ave' : '') + ' · ' + sstRef_(a) + '] ' + String(a.observacao || '').trim() + (a.sujeito === 'AVE' && a.pessoas ? ' (Envolvidos: ' + String(a.pessoas).trim() + ')' : '') };
+    logData['reconhecimento-incidentes'].push(row);
+    ops.push({ op: 'add', row: row });
+  });
+  return ops;
+}
+/* Alertas confirmados (inclusive histórico) que ainda não estão no Reconhecimento.
+   Repetições do histórico (instalação rodou mais de uma vez) contam uma vez só. */
+function sstPendentesReconhecimento_(){
+  const vistos = {};
+  return sstTodosAlertas_().filter(function(a){
+    if(a.avaliacao !== 'Confirmado' || a.arquivado) return false;
+    if(String(a.origem || '').toLowerCase().indexOf('teste') !== -1 || a.aba === 'TESTE') return false;
+    if(sstIncidentesDoAlerta_(a).length) return false;
+    const l = sstNorm_(a.local);
+    const k = sstDataIso_(a.dataAtividade) + '|' + (l || ('sem-local|' + sstPessoasDoAlerta_(a, true).map(sstNorm_).sort().join(',')));
+    if(vistos[k]) return false;
+    vistos[k] = 1;
+    return true;
+  });
+}
+async function sstImportarPendentes_(){
+  if(!canManageList('reconhecimento-incidentes')){ alert('Somente administradores podem registrar incidentes.'); return; }
+  const pend = sstPendentesReconhecimento_();
+  if(!pend.length){ alert('Nenhum alerta confirmado pendente.'); return; }
+  const c = { ACIDENTE:0, 'QUASE ACIDENTE':0, 'MAL-ESTAR':0 }; let aves = 0;
+  pend.forEach(function(a){ c[a.nivel] = (c[a.nivel] || 0) + 1; if(a.sujeito === 'AVE') aves++; });
+  if(!confirm('Registrar no Reconhecimento ' + pend.length + ' ocorrência(s) confirmada(s) dos Alertas SST, inclusive o histórico?\n\n' +
+    'Acidente: ' + c.ACIDENTE + ' · Quase acidente: ' + c['QUASE ACIDENTE'] + ' · Mal-estar (entra como Acidente): ' + c['MAL-ESTAR'] +
+    '\nSó com ave: ' + aves + ' (entram sem colaborador, para não zerar o contador de ninguém).' +
+    '\n\nOcorrências com várias pessoas geram um lançamento por pessoa. A gravidade fica em branco.')) return;
+  const ops = [];
+  let base = Date.now();
+  pend.forEach(function(a){
+    if(sstIncidentesDoAlerta_(a).length) return;
+    const o = sstLinhasDoAlerta_(a, base);
+    base += o.length + 1;
+    o.forEach(function(x){ ops.push(x); });
+  });
+  await saveLog('reconhecimento-incidentes', ops);
+  try{ renderLogTable('reconhecimento-incidentes'); renderReconhecimentoPainel(); }catch(e){}
+  try{ sstRenderAlertas_(); }catch(e){}
+  alert(ops.length + ' lançamento(s) gravado(s) no Reconhecimento.');
+}
+function reconPendentesSstHtml_(){
+  if(!SST_TODOS_ || !canManageList('reconhecimento-incidentes')) return '';
+  const n = sstPendentesReconhecimento_().length;
+  if(!n) return '<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 0;">✔ Todos os alertas SST confirmados (inclusive histórico) já estão no Reconhecimento.</div>';
+  return '<div class="logtable-wrap" style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;"><b>' + n + '</b> alerta(s) SST confirmado(s), inclusive do histórico, ainda fora do Reconhecimento.</span>' +
+    '<button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstImportarPendentes_()">➕ Registrar todos</button></div>';
 }
 function sstIrParaReconhecimento_(){
   showView('reconhecimento');
@@ -7826,16 +7889,21 @@ function sstIrParaReconhecimento_(){
 }
 function reconAlertaSstHtml_(inc){
   const al = sstAlertasDoIncidente_(inc);
-  if(!al.length) return SST_ALERTAS_CARREGADO_ ? '<span style="font-size:11px;color:var(--ink-soft);">—</span>' : '';
+  if(!al.length) return SST_TODOS_ ? '<span style="font-size:11px;color:var(--ink-soft);">—</span>' : '';
   const a = al[0];
   const ic = { 'ACIDENTE':'🔴', 'QUASE ACIDENTE':'🟠', 'MAL-ESTAR':'🟡' }[a.nivel] || '⚠️';
   return '<a href="#" onclick="showView(\'alertassst\');sstCarregarAlertas_();return false;" style="font-size:11px;white-space:nowrap;">' + ic + ' ' + sstEsc_(a.enviado ? '#' + a.id : 'histórico') + (a.avaliacao ? ' · ' + sstEsc_(a.avaliacao) : '') + '</a>';
 }
 let RECON_SST_PEDIDO_ = false;
+let SST_TODOS_ = null; /* alertas com histórico, só para a ligação com o Reconhecimento */
 function reconGarantirAlertasSst_(){
-  if(SST_ALERTAS_CARREGADO_ || RECON_SST_PEDIDO_ || !SESSION || !APPS_SCRIPT_URL) return;
+  if(SST_TODOS_ || RECON_SST_PEDIDO_ || !SESSION || !APPS_SCRIPT_URL) return;
   RECON_SST_PEDIDO_ = true;
-  sstCarregarAlertas_().then(function(){ try{ renderReconhecimentoPainel(); }catch(e){} });
+  sstPushPost_({ action:'listarAlertasSST', incluirHistorico: true }).then(function(j){
+    SST_TODOS_ = j.alertas || [];
+    try{ renderReconhecimentoPainel(); }catch(e){}
+    try{ if(SST_ALERTAS_CARREGADO_) sstRenderAlertas_(); }catch(e){}
+  }).catch(function(e){ RECON_SST_PEDIDO_ = false; console.error('SST x Reconhecimento', e); });
 }
 </script>
 <script>
