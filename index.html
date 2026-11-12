@@ -1886,18 +1886,31 @@ async function doLogin(){
     return;
   }
 
-  let res, json;
-  try{
-    res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action:'login', email:email, password:password })
-    });
-    json = await res.json();
-  }catch(e){
-    errEl.textContent = "Erro de conexão: " + (e.message || e);
+  let res, json, ultimoErro;
+  /* Respostas do Apps Script às vezes se perdem: prazo curto e nova tentativa. */
+  const prazosLogin = [8000, 10000, 15000, 20000, 30000];
+  for(let t = 0; t < prazosLogin.length && !json; t++){
+    const ac = new AbortController();
+    const tm = setTimeout(() => ac.abort(), prazosLogin[t]);
+    if(t > 0) errEl.textContent = 'Servidor lento, tentando de novo (' + (t + 1) + '/' + prazosLogin.length + ')…';
+    try{
+      res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', signal: ac.signal,
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'login', email:email, password:password })
+      });
+      json = await res.json();
+    }catch(e){
+      ultimoErro = e;
+    }finally{
+      clearTimeout(tm);
+    }
+  }
+  if(!json){
+    errEl.textContent = "Erro de conexão: o servidor não respondeu após " + prazosLogin.length + " tentativas. Tente de novo em instantes.";
     return;
   }
+  errEl.textContent = '';
   if(json.error){
     errEl.textContent = json.error;
     return;
