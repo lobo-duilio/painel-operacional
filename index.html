@@ -2166,6 +2166,46 @@ async function storageGet(key){
  * de rede fazem essa função lançar exceção; chaves individuais sem
  * permissão vêm marcadas com forbidden:true, sem derrubar o lote todo.
  */
+/** Carga em paralelo (12/11/2026): o pacote único com todas as chaves levava
+  * ~14 s no Apps Script (e passava de 1 min quando o gatilho de sincronização
+  * rodava junto). Chaves pesadas (registros, treinamento) vão sozinhas e as
+  * demais em grupos de 4; os pedidos correm ao mesmo tempo e o resultado é o
+  * mesmo objeto que storageGetBatch devolveria. */
+async function storageGetBatchParalelo_(keys){
+  const pesadas = keys.filter(k => /registros|treinamento/.test(k));
+  const leves = keys.filter(k => pesadas.indexOf(k) === -1);
+  const grupos = pesadas.map(k => [k]);
+  for(let i = 0; i < leves.length; i += 4) grupos.push(leves.slice(i, i + 4));
+  const partes = await Promise.all(grupos.map(g => storageGetBatchComRetry_(g)));
+  return Object.assign({}, ...partes);
+}
+/** Alguns pedidos ao Apps Script nunca respondem (o servidor conclui, mas a
+  * resposta não chega ao navegador). Cada pedido tem prazo (10 s; 15 s para
+  * chaves pesadas) e é repetido até 5 vezes, em vez de esperar para sempre. */
+async function storageGetBatchComRetry_(keys){
+  const pesado = keys.some(k => /registros|treinamento/.test(k));
+  const prazo = pesado ? 15000 : 10000;
+  let ultimoErro;
+  for(let tentativa = 1; tentativa <= 5; tentativa++){
+    const ac = new AbortController();
+    const tm = setTimeout(() => ac.abort(), prazo);
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'get', keys: keys.join(','), token: SESSION ? SESSION.token : '' }) });
+      if(!res.ok) throw new Error('CONN_ERROR: servidor respondeu status ' + res.status);
+      const json = await res.json();
+      if(json.error === 'unauthenticated'){ handleSessionExpired(); throw new Error('AUTH_EXPIRED'); }
+      if(json.error) throw new Error('CONN_ERROR: ' + json.error);
+      return json.values || {};
+    }catch(e){
+      if(String(e && e.message) === 'AUTH_EXPIRED') throw e;
+      ultimoErro = e;
+    }finally{
+      clearTimeout(tm);
+    }
+  }
+  throw new Error('CONN_ERROR: sem resposta do servidor após 5 tentativas (' + (ultimoErro && ultimoErro.message || ultimoErro) + ')');
+}
+
 async function storageGetBatch(keys){
   if(!APPS_SCRIPT_URL || keys.length === 0) return {};
   let res, json;
@@ -7034,7 +7074,7 @@ async function bulkLoadInitialData(){
 
   let batch1;
   try{
-    batch1 = await storageGetBatch(firstBatchKeys);
+    batch1 = await storageGetBatchParalelo_(firstBatchKeys);
   }catch(e){
     if(String(e.message) === 'AUTH_EXPIRED') return;
     document.getElementById('lastUpdate').textContent =
@@ -7160,7 +7200,7 @@ async function bulkLoadInitialData(){
     });
     let batch2 = {};
     try{
-      batch2 = await storageGetBatch(customKeys);
+      batch2 = await storageGetBatchParalelo_(customKeys);
     }catch(e){
       if(String(e.message) === 'AUTH_EXPIRED') return;
       batch2 = {};
