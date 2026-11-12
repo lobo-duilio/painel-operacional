@@ -2180,15 +2180,18 @@ async function storageGetBatchParalelo_(keys){
   return Object.assign({}, ...partes);
 }
 /** Alguns pedidos ao Apps Script nunca respondem (o servidor conclui, mas a
-  * resposta não chega ao navegador). Cada pedido tem prazo (10 s; 15 s para
-  * chaves pesadas) e é repetido até 5 vezes, em vez de esperar para sempre. */
+  * resposta não chega ao navegador). Cada pedido tem prazo crescente (15/25/45 s;
+  * 20/35/60 s nas chaves pesadas) e a 4ª tentativa espera sem limite. */
 async function storageGetBatchComRetry_(keys){
   const pesado = keys.some(k => /registros|treinamento/.test(k));
-  const prazo = pesado ? 15000 : 10000;
+  /* Prazo cresce a cada tentativa; a última espera sem limite (comportamento
+     antigo), para conexão lenta (celular/tablet) nunca falhar só pelo prazo. */
+  const prazos = pesado ? [20000, 35000, 60000, 0] : [15000, 25000, 45000, 0];
   let ultimoErro;
-  for(let tentativa = 1; tentativa <= 5; tentativa++){
+  for(let tentativa = 1; tentativa <= prazos.length; tentativa++){
+    const prazo = prazos[tentativa - 1];
     const ac = new AbortController();
-    const tm = setTimeout(() => ac.abort(), prazo);
+    const tm = prazo ? setTimeout(() => ac.abort(), prazo) : null;
     try{
       const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'get', keys: keys.join(','), token: SESSION ? SESSION.token : '' }) });
       if(!res.ok) throw new Error('CONN_ERROR: servidor respondeu status ' + res.status);
@@ -2200,10 +2203,10 @@ async function storageGetBatchComRetry_(keys){
       if(String(e && e.message) === 'AUTH_EXPIRED') throw e;
       ultimoErro = e;
     }finally{
-      clearTimeout(tm);
+      if(tm) clearTimeout(tm);
     }
   }
-  throw new Error('CONN_ERROR: sem resposta do servidor após 5 tentativas (' + (ultimoErro && ultimoErro.message || ultimoErro) + ')');
+  throw new Error('CONN_ERROR: sem resposta do servidor após ' + prazos.length + ' tentativas (' + (ultimoErro && ultimoErro.message || ultimoErro) + ')');
 }
 
 async function storageGetBatch(keys){
