@@ -1537,13 +1537,33 @@
       fetchOriginal(job.url, job.opts).then(job.resolve, job.reject).finally(() => { ativos--; proximo(); });
     }
   };
+  const enfileirar = (url, opts) => new Promise((resolve, reject) => {
+    fila.push({ url: url, opts: opts, signal: opts && opts.signal, resolve: resolve, reject: reject });
+    proximo();
+  });
+  /* Leituras sem prazo próprio ganham prazo curto e novas tentativas: hoje
+     parte das respostas do Apps Script some no caminho. Gravações nunca são
+     repetidas aqui (o servidor pode ter gravado mesmo sem a resposta chegar). */
+  const LEITURA = /^(get|login|ping|listar[A-Za-z]*|ler[A-Za-z]*|carregar[A-Za-z]*)$/;
   window.fetch = function(url, opts){
     const u = String(url && url.url || url || '');
     if(!/script\.google(usercontent)?\.com/.test(u)) return fetchOriginal(url, opts);
-    return new Promise((resolve, reject) => {
-      fila.push({ url: url, opts: opts, signal: opts && opts.signal, resolve: resolve, reject: reject });
-      proximo();
-    });
+    let acao = '';
+    try{ acao = JSON.parse(opts && opts.body || '{}').action || ''; }catch(e){}
+    if((opts && opts.signal) || !LEITURA.test(acao)) return enfileirar(url, opts);
+    const prazos = [10000, 12000, 15000, 20000, 30000, 45000];
+    return (async () => {
+      let ultimo;
+      for(const prazo of prazos){
+        const ac = new AbortController();
+        const tm = setTimeout(() => ac.abort(), prazo);
+        try{
+          return await enfileirar(url, Object.assign({}, opts, { signal: ac.signal }));
+        }catch(e){ ultimo = e; }
+        finally{ clearTimeout(tm); }
+      }
+      throw ultimo;
+    })();
   };
 })();
 
