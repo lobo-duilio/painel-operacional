@@ -5413,6 +5413,7 @@ function renderReconhecimentoPainel(){
   const pctSucesso = totalSucessos ? Math.round(dentroPrazo / totalSucessos * 100) : null;
 
   const incidentes = logData['reconhecimento-incidentes'] || [];
+  try{ reconGarantirAlertasSst_(); }catch(e){}
   const nomes = reconhecimentoColaboradores();
   const totalAcidentes = incidentes.filter(i => i.tipo === 'Acidente').length;
   const totalQuase = incidentes.filter(i => i.tipo === 'Quase Acidente').length;
@@ -5496,12 +5497,13 @@ function reconhecimentoOcorrenciasHtml(incidentes){
           <td>${esc(i.empreendimento || '—')}</td>
           <td>${esc(i.ave || '—')}</td>
           <td style="white-space:normal;min-width:220px;">${esc(i.descricao || '')}</td>
+          <td>${(function(){ try{ return reconAlertaSstHtml_(i); }catch(e){ return ''; } })()}</td>
         </tr>`).join('');
   return `
     <div class="logtable-wrap" style="margin-top:16px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Acidentes e quase acidentes (${lista.length})</div>
       <table class="logtable">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th><th>Alerta SST</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>`;
@@ -7590,6 +7592,7 @@ function sstRenderAlertas_(){
       '<br>Envolvidos: <b>' + sstEsc_(a.pessoas || '—') + '</b>' + (a.preenchidoPor ? ' · Preenchido por: ' + sstEsc_(a.preenchidoPor.replace(/\s*<[^>]*>/, '')) : '') +
       '<br>Origem: ' + sstEsc_(a.origem || '—') + (a.aba ? ' · ' + sstEsc_(a.aba) : '') + '</div>' +
       '<div class="sst-obs">' + sstEsc_(a.observacao) + '</div>';
+    try{ h += sstReconHtml_(a, i); }catch(e){ console.error('SST x Reconhecimento', e); }
     if(a.notaAvaliacao) h += '<div class="sst-meta" style="margin-top:8px;">Nota: ' + sstEsc_(a.notaAvaliacao) + '</div>';
     if(SST_ALERTAS_ADMIN_){
       h += '<details><summary>Envio e palavras detectadas</summary>' +
@@ -7748,6 +7751,91 @@ async function sstArquivarAlerta_(i){
   }catch(e){
     alert('Não foi possível excluir o alerta: ' + (e.message || e));
   }
+}
+</script>
+<script>
+/* ===== Ligação Alertas SST <-> Reconhecimento (12/11/2026) =====
+   Mesma ocorrência = mesma data + mesmo empreendimento (sem acento/caixa).
+   - Card do alerta: mostra se já está no Reconhecimento; se não estiver e o
+     alerta for "Confirmado", o admin registra com um clique (um lançamento
+     por pessoa envolvida, para o contador de dias sem incidente).
+   - Tabela de ocorrências do Reconhecimento: coluna com o alerta SST ligado.
+   Não cria coluna nova na planilha. */
+function sstNorm_(v){ return String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function sstDataIso_(v){
+  const t = String(v || '').trim();
+  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(br) return br[3] + '-' + ('0' + br[2]).slice(-2) + '-' + ('0' + br[1]).slice(-2);
+  return t.slice(0, 10);
+}
+function sstMesmaOcorrencia_(a, inc){
+  const l = sstNorm_(a.local);
+  return !!l && sstDataIso_(a.dataAtividade) === sstDataIso_(inc.data) && l === sstNorm_(inc.empreendimento);
+}
+function sstIncidentesDoAlerta_(a){
+  return (logData['reconhecimento-incidentes'] || []).filter(function(inc){ return sstMesmaOcorrencia_(a, inc); });
+}
+function sstAlertasDoIncidente_(inc){
+  return (SST_ALERTAS_ || []).filter(function(a){ return sstMesmaOcorrencia_(a, inc); });
+}
+function sstPessoasDoAlerta_(a){
+  if(a.sujeito === 'AVE') return [];
+  const vistos = {};
+  return String(a.pessoas || '').split(/\s*(?:,|;|\/|\se\s)\s*/).map(function(n){ return reconhecimentoNomeCanonico(n); })
+    .filter(function(n){ if(!n || vistos[n]) return false; vistos[n] = 1; return true; });
+}
+function sstReconHtml_(a, i){
+  const ligados = sstIncidentesDoAlerta_(a);
+  if(ligados.length){
+    const nomes = ligados.map(function(x){ return reconhecimentoNomeCanonico(x.responsavel) || 'sem colaborador'; }).join(', ');
+    return '<div class="sst-meta" style="margin-top:8px;"><a href="#" onclick="sstIrParaReconhecimento_();return false;" style="color:var(--green,#2e7d32);font-weight:600;">✔ No Reconhecimento</a> · ' + sstEsc_(ligados.length + ' lançamento(s): ' + nomes) + '</div>';
+  }
+  if(!SST_ALERTAS_ADMIN_) return '';
+  if(a.avaliacao !== 'Confirmado') return '<div class="sst-meta" style="margin-top:8px;">Fora do Reconhecimento · confirme o alerta para poder registrar.</div>';
+  return '<div class="sst-meta" style="margin-top:8px;">Fora do Reconhecimento · <button class="btn" style="background:var(--navy);color:#fff;border:0;padding:4px 10px;" onclick="sstRegistrarNoReconhecimento_(' + i + ')">➕ Registrar no Reconhecimento</button></div>';
+}
+async function sstRegistrarNoReconhecimento_(i){
+  const a = (window.__sstVisiveis || [])[i];
+  if(!a || a.avaliacao !== 'Confirmado' || sstIncidentesDoAlerta_(a).length) return;
+  if(!canManageList('reconhecimento-incidentes')){ alert('Somente administradores podem registrar incidentes.'); return; }
+  const tipo = a.nivel === 'QUASE ACIDENTE' ? 'Quase Acidente' : 'Acidente';
+  const pessoas = sstPessoasDoAlerta_(a);
+  const alvo = pessoas.length ? pessoas : [''];
+  const msg = 'Registrar no Reconhecimento como "' + tipo + '"?\n\n' + (a.local || 'local não informado') + ' — ' + sstDataBr_(sstDataIso_(a.dataAtividade)) +
+    '\nColaborador(es): ' + (pessoas.join(', ') || 'nenhum (só ave)') +
+    (a.nivel === 'MAL-ESTAR' ? '\n\nMal-estar entra como "Acidente" (mesmo critério do histórico) e zera o contador de dias sem incidente.' : '') +
+    '\n\nA gravidade fica em branco para você preencher na aba Reconhecimento.';
+  if(!confirm(msg)) return;
+  logData['reconhecimento-incidentes'] = logData['reconhecimento-incidentes'] || [];
+  const ops = [];
+  const base = Date.now();
+  alvo.forEach(function(nome, k){
+    const row = { id: base + k, data: sstDataIso_(a.dataAtividade), tipo: tipo, gravidade: '', empreendimento: String(a.local || '').trim(), responsavel: nome, ave: '',
+      descricao: '[Alerta SST' + (a.enviado ? ' #' + a.id : '') + ' · ' + a.nivel + '] ' + String(a.observacao || '').trim() };
+    logData['reconhecimento-incidentes'].push(row);
+    ops.push({ op: 'add', row: row });
+  });
+  await saveLog('reconhecimento-incidentes', ops);
+  try{ renderLogTable('reconhecimento-incidentes'); renderReconhecimentoPainel(); }catch(e){}
+  sstRenderAlertas_();
+}
+function sstIrParaReconhecimento_(){
+  showView('reconhecimento');
+  const b = Array.prototype.find.call(document.querySelectorAll('#view-reconhecimento .subnav button'), function(x){ return /incidente/i.test(x.textContent); });
+  if(b) b.click();
+}
+function reconAlertaSstHtml_(inc){
+  const al = sstAlertasDoIncidente_(inc);
+  if(!al.length) return SST_ALERTAS_CARREGADO_ ? '<span style="font-size:11px;color:var(--ink-soft);">—</span>' : '';
+  const a = al[0];
+  const ic = { 'ACIDENTE':'🔴', 'QUASE ACIDENTE':'🟠', 'MAL-ESTAR':'🟡' }[a.nivel] || '⚠️';
+  return '<a href="#" onclick="showView(\'alertassst\');sstCarregarAlertas_();return false;" style="font-size:11px;white-space:nowrap;">' + ic + ' ' + sstEsc_(a.enviado ? '#' + a.id : 'histórico') + (a.avaliacao ? ' · ' + sstEsc_(a.avaliacao) : '') + '</a>';
+}
+let RECON_SST_PEDIDO_ = false;
+function reconGarantirAlertasSst_(){
+  if(SST_ALERTAS_CARREGADO_ || RECON_SST_PEDIDO_ || !SESSION || !APPS_SCRIPT_URL) return;
+  RECON_SST_PEDIDO_ = true;
+  sstCarregarAlertas_().then(function(){ try{ renderReconhecimentoPainel(); }catch(e){} });
 }
 </script>
 <script>
