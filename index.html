@@ -1520,6 +1520,33 @@
 </div>
 
 <script>
+/* Fila de pedidos ao Apps Script (12/11/2026): com mais de 3 pedidos
+   simultâneos ao script.google.com os excedentes travam e nunca respondem.
+   Todo fetch para o Apps Script passa por aqui: no máximo 3 ao mesmo tempo,
+   os demais esperam a vez. Um pedido abortado (prazo) libera a vaga. */
+(function(){
+  const fetchOriginal = window.fetch.bind(window);
+  const MAX = 4;
+  let ativos = 0;
+  const fila = [];
+  const proximo = () => {
+    while(ativos < MAX && fila.length){
+      const job = fila.shift();
+      if(job.signal && job.signal.aborted){ job.reject(new DOMException('Aborted', 'AbortError')); continue; }
+      ativos++;
+      fetchOriginal(job.url, job.opts).then(job.resolve, job.reject).finally(() => { ativos--; proximo(); });
+    }
+  };
+  window.fetch = function(url, opts){
+    const u = String(url && url.url || url || '');
+    if(!/script\.google(usercontent)?\.com/.test(u)) return fetchOriginal(url, opts);
+    return new Promise((resolve, reject) => {
+      fila.push({ url: url, opts: opts, signal: opts && opts.signal, resolve: resolve, reject: reject });
+      proximo();
+    });
+  };
+})();
+
 /* ===================== PAINEL GERAL (atividades) ===================== */
 
 const STAGES = ["Não iniciado","Em planejamento","Em execução","Atrasado","Concluído"];
@@ -2184,9 +2211,10 @@ async function storageGetBatchParalelo_(keys){
   * 20/35/60 s nas chaves pesadas) e a 4ª tentativa espera sem limite. */
 async function storageGetBatchComRetry_(keys){
   const pesado = keys.some(k => /registros|treinamento/.test(k));
-  /* Prazo cresce a cada tentativa; a última espera sem limite (comportamento
-     antigo), para conexão lenta (celular/tablet) nunca falhar só pelo prazo. */
-  const prazos = pesado ? [20000, 35000, 60000, 0] : [15000, 25000, 45000, 0];
+  /* Hoje (12/11) ~metade das respostas do Apps Script some no caminho, mesmo
+     com o servidor concluindo em ~2 s. Pedido saudável volta em 2-5 s, então o
+     prazo é curto e as tentativas são várias, crescendo para conexões lentas. */
+  const prazos = pesado ? [20000, 20000, 25000, 30000, 40000, 60000] : [8000, 8000, 10000, 12000, 15000, 20000, 30000];
   let ultimoErro;
   for(let tentativa = 1; tentativa <= prazos.length; tentativa++){
     const prazo = prazos[tentativa - 1];
