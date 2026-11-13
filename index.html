@@ -1229,7 +1229,7 @@
     <button id="opsub-armadilhas" onclick="showView('armadilhas')">Armadilhas</button>
     <button id="opsub-auditoria" onclick="showView('auditoria')">Auditoria</button>
     <button id="opsub-contratos" onclick="showView('contratos')">Contratos</button>
-    <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Reconhecimento</button>
+    <button id="opsub-reconhecimento" onclick="showView('reconhecimento')">Desempenho da equipe</button>
     <button id="opsub-dimensionamento" onclick="showView('dimensionamento')">Dimensionamento de Equipe</button>
     <button id="opsub-alertassst" onclick="showView('alertassst')">🛡️ Alertas SST</button>
   </div>
@@ -1422,7 +1422,7 @@
   <div class="view" id="view-reconhecimento">
     <div class="module-header">
       <div>
-        <h2>Reconhecimento</h2>
+        <h2>Desempenho da equipe</h2>
         <p>Indicadores de reconhecimento por responsável — separado do quadro de cobrança de status</p>
       </div>
     </div>
@@ -1444,7 +1444,7 @@
       <div id="sub-reconhecimento-incidentes-tabela"></div>
     </div>
     <div class="subview" id="sub-reconhecimento-colaboradores">
-      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Lista editável de colaboradores do Reconhecimento. Os nomes daqui se somam aos da matriz de Auditoria e ao cadastro de responsáveis de Aves no menu "Colaborador" — use para incluir quem não aparece nas outras listas.</p>
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;">Lista editável de colaboradores do Desempenho da equipe. Os nomes daqui se somam aos da matriz de Auditoria e ao cadastro de responsáveis de Aves no menu "Colaborador" — use para incluir quem não aparece nas outras listas.</p>
       <div id="sub-reconhecimento-colaboradores-tabela"></div>
     </div>
   </div>
@@ -7947,11 +7947,11 @@ function sstReconHtml_(a, i){
   const ligados = sstIncidentesDoAlerta_(a);
   if(ligados.length){
     const nomes = ligados.map(function(x){ return reconhecimentoNomeCanonico(x.responsavel) || 'sem colaborador'; }).join(', ');
-    return '<div class="sst-meta" style="margin-top:8px;"><a href="#" onclick="sstIrParaReconhecimento_();return false;" style="color:var(--green,#2e7d32);font-weight:600;">✔ No Reconhecimento</a> · ' + sstEsc_(ligados.length + ' lançamento(s): ' + nomes) + '</div>';
+    return '<div class="sst-meta" style="margin-top:8px;"><a href="#" onclick="sstIrParaReconhecimento_();return false;" style="color:var(--green,#2e7d32);font-weight:600;">✔ No Desempenho da equipe</a> · ' + sstEsc_(ligados.length + ' lançamento(s): ' + nomes) + '</div>';
   }
   if(!SST_ALERTAS_ADMIN_) return '';
-  if(a.avaliacao !== 'Confirmado') return '<div class="sst-meta" style="margin-top:8px;">Fora do Reconhecimento · confirme o alerta para poder registrar.</div>';
-  return '<div class="sst-meta" style="margin-top:8px;">Fora do Reconhecimento · <button class="btn" style="background:var(--navy);color:#fff;border:0;padding:4px 10px;" onclick="sstRegistrarNoReconhecimento_(' + i + ')">➕ Registrar no Reconhecimento</button></div>';
+  if(a.avaliacao !== 'Confirmado') return '<div class="sst-meta" style="margin-top:8px;">Fora do Desempenho da equipe · confirme o alerta para poder registrar.</div>';
+  return '<div class="sst-meta" style="margin-top:8px;">Fora do Desempenho da equipe · <button class="btn" style="background:var(--navy);color:#fff;border:0;padding:4px 10px;" onclick="sstRegistrarNoReconhecimento_(' + i + ')">➕ Registrar no Desempenho da equipe</button></div>';
 }
 async function sstRegistrarNoReconhecimento_(i){
   const a = (window.__sstVisiveis || [])[i];
@@ -7959,10 +7959,10 @@ async function sstRegistrarNoReconhecimento_(i){
   if(!canManageList('reconhecimento-incidentes')){ alert('Somente administradores podem registrar incidentes.'); return; }
   const tipo = a.nivel === 'QUASE ACIDENTE' ? 'Quase Acidente' : 'Acidente';
   const pessoas = sstPessoasDoAlerta_(a);
-  const msg = 'Registrar no Reconhecimento como "' + tipo + '"?\n\n' + (a.local || 'local não informado') + ' — ' + sstDataBr_(sstDataIso_(a.dataAtividade)) +
+  const msg = 'Registrar no Desempenho da equipe como "' + tipo + '"?\n\n' + (a.local || 'local não informado') + ' — ' + sstDataBr_(sstDataIso_(a.dataAtividade)) +
     '\nColaborador(es): ' + (pessoas.join(', ') || 'nenhum (só ave)') +
     (a.nivel === 'MAL-ESTAR' ? '\n\nMal-estar entra como "Acidente" (mesmo critério do histórico) e zera o contador de dias sem incidente.' : '') +
-    '\n\nA gravidade fica em branco para você preencher na aba Reconhecimento.';
+    '\n\nA gravidade fica em branco para você preencher na aba Desempenho da equipe.';
   if(!confirm(msg)) return;
   const ops = sstLinhasDoAlerta_(a, Date.now());
   await saveLog('reconhecimento-incidentes', ops);
@@ -7991,6 +7991,7 @@ function sstPendentesReconhecimento_(){
     if(a.avaliacao !== 'Confirmado' || a.arquivado) return false;
     if(String(a.origem || '').toLowerCase().indexOf('teste') !== -1 || a.aba === 'TESTE') return false;
     if(sstIncidentesDoAlerta_(a).length) return false;
+    if(sstRetiradoDaContagem_(a)) return false;
     const l = sstNorm_(a.local);
     const k = sstDataIso_(a.dataAtividade) + '|' + (l || ('sem-local|' + sstPessoasDoAlerta_(a, true).map(sstNorm_).sort().join(',')));
     if(vistos[k]) return false;
@@ -7998,13 +7999,20 @@ function sstPendentesReconhecimento_(){
     return true;
   });
 }
+/* Ocorrência retirada da contagem pela gerência: um alerta posterior que cita
+   a mesma ref (re-alerta) foi avaliado como "Falso positivo" (13/11/2026). */
+function sstRetiradoDaContagem_(a){
+  const ref = sstRef_(a);
+  if(ref.length <= 4) return false;
+  return sstTodosAlertas_().some(function(x){ return x !== a && x.avaliacao === 'Falso positivo' && String(x.observacao || '').indexOf(ref) !== -1; });
+}
 async function sstImportarPendentes_(){
   if(!canManageList('reconhecimento-incidentes')){ alert('Somente administradores podem registrar incidentes.'); return; }
   const pend = sstPendentesReconhecimento_();
   if(!pend.length){ alert('Nenhum alerta confirmado pendente.'); return; }
   const c = { ACIDENTE:0, 'QUASE ACIDENTE':0, 'MAL-ESTAR':0 }; let aves = 0;
   pend.forEach(function(a){ c[a.nivel] = (c[a.nivel] || 0) + 1; if(a.sujeito === 'AVE') aves++; });
-  if(!confirm('Registrar no Reconhecimento ' + pend.length + ' ocorrência(s) confirmada(s) dos Alertas SST, inclusive o histórico?\n\n' +
+  if(!confirm('Registrar no Desempenho da equipe ' + pend.length + ' ocorrência(s) confirmada(s) dos Alertas SST, inclusive o histórico?\n\n' +
     'Acidente: ' + c.ACIDENTE + ' · Quase acidente: ' + c['QUASE ACIDENTE'] + ' · Mal-estar (entra como Acidente): ' + c['MAL-ESTAR'] +
     '\nSó com ave: ' + aves + ' (entram sem colaborador, para não zerar o contador de ninguém).' +
     '\n\nOcorrências com várias pessoas geram um lançamento por pessoa. A gravidade fica em branco.')) return;
@@ -8019,13 +8027,13 @@ async function sstImportarPendentes_(){
   await saveLog('reconhecimento-incidentes', ops);
   try{ renderLogTable('reconhecimento-incidentes'); renderReconhecimentoPainel(); }catch(e){}
   try{ sstRenderAlertas_(); }catch(e){}
-  alert(ops.length + ' lançamento(s) gravado(s) no Reconhecimento.');
+  alert(ops.length + ' lançamento(s) gravado(s) no Desempenho da equipe.');
 }
 function reconPendentesSstHtml_(){
   if(!SST_TODOS_ || !canManageList('reconhecimento-incidentes')) return '';
   const n = sstPendentesReconhecimento_().length;
-  if(!n) return '<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 0;">✔ Todos os alertas SST confirmados (inclusive histórico) já estão no Reconhecimento.</div>';
-  return '<div class="logtable-wrap" style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;"><b>' + n + '</b> alerta(s) SST confirmado(s), inclusive do histórico, ainda fora do Reconhecimento.</span>' +
+  if(!n) return '<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 0;">✔ Todos os alertas SST confirmados (inclusive histórico) já estão no Desempenho da equipe.</div>';
+  return '<div class="logtable-wrap" style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;"><b>' + n + '</b> alerta(s) SST confirmado(s), inclusive do histórico, ainda fora do Desempenho da equipe.</span>' +
     '<button class="btn" style="background:var(--navy);color:#fff;border:0;" onclick="sstImportarPendentes_()">➕ Registrar todos</button></div>';
 }
 function sstIrParaReconhecimento_(){
