@@ -5519,8 +5519,9 @@ function renderReconhecimentoPainel(){
   const incidentes = logData['reconhecimento-incidentes'] || [];
   try{ reconGarantirAlertasSst_(); }catch(e){}
   const nomes = reconhecimentoColaboradores();
-  const totalAcidentes = incidentes.filter(i => i.tipo === 'Acidente').length;
-  const totalQuase = incidentes.filter(i => i.tipo === 'Quase Acidente').length;
+  const ocorrencias = reconOcorrencias_(incidentes);
+  const totalAcidentes = ocorrencias.filter(o => o.tipo === 'Acidente').length;
+  const totalQuase = ocorrencias.filter(o => o.tipo === 'Quase Acidente').length;
 
   const linhasResponsavel = nomes.map(nome=>{
     const casosPessoa = sucessos.filter(s=>reconhecimentoNomeCanonico(s.responsavel)===nome);
@@ -5579,37 +5580,78 @@ function renderReconhecimentoPainel(){
 /** Lista de acidentes e quase acidentes (somente leitura) exibida no Painel
  * do Reconhecimento, mais recente primeiro. A edição continua na subaba
  * "Registrar incidente". Registros sem Tipo aparecem como "Sem tipo". */
+/** Agrupa os lançamentos de incidente (um por colaborador) em ocorrências:
+ * mesma ref de alerta SST, ou mesma data + empreendimento + descrição + tipo.
+ * "situacao" = descrição sem as marcações técnicas entre colchetes. */
+function reconSituacao_(d){ return String(d || '').replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s+/g, ' ').trim(); }
+function reconOcorrencias_(incidentes){
+  const grupos = {};
+  const ordem = [];
+  (incidentes || []).forEach(i => {
+    const ref = (String(i.descricao || '').match(/ref:[0-9a-f]{8}/) || [])[0];
+    const k = ref || [String(i.data||'').slice(0,10), i.empreendimento || '', reconSituacao_(i.descricao), i.tipo || ''].join('|').toLowerCase();
+    if(!grupos[k]){ grupos[k] = { data:i.data, tipo:i.tipo, gravidade:i.gravidade, empreendimento:i.empreendimento, ave:i.ave, situacao:reconSituacao_(i.descricao), responsaveis:[], base:i }; ordem.push(k); }
+    const g = grupos[k];
+    const nome = reconhecimentoNomeCanonico(i.responsavel);
+    if(nome && g.responsaveis.indexOf(nome) === -1) g.responsaveis.push(nome);
+    if(!g.gravidade && i.gravidade) g.gravidade = i.gravidade;
+    if(!g.ave && i.ave) g.ave = i.ave;
+  });
+  return ordem.map(k => grupos[k]);
+}
+
+/** Lista de acidentes e quase acidentes (somente leitura) exibida no Painel
+ * do Reconhecimento: uma linha por ocorrência, com todos os responsáveis
+ * juntos, mais recente primeiro. A edição continua em "Registrar incidente". */
 function reconhecimentoOcorrenciasHtml(incidentes){
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const dataBR = d => {
     const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     return m ? m[3] + '/' + m[2] + '/' + m[1] : esc(d || '—');
   };
-  const lista = (incidentes || []).slice().sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));
+  const lista = reconOcorrencias_(incidentes).sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));
   let pendSst = '';
   try{ pendSst = reconPendentesSstHtml_(); }catch(e){}
   if(!lista.length) return pendSst;
   const selo = t => {
-    if(t === 'Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--red-light);color:var(--red);">Acidente</span>';
-    if(t === 'Quase Acidente') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--amber-light);color:var(--amber);">Quase acidente</span>';
-    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:var(--gray-light);color:var(--ink-soft);">Sem tipo</span>';
+    if(t === 'Acidente') return '<span class="rc-selo rc-acid">Acidente</span>';
+    if(t === 'Quase Acidente') return '<span class="rc-selo rc-quase">Quase acidente</span>';
+    return '<span class="rc-selo">Sem tipo</span>';
   };
-  const linhas = lista.map(i => `
+  const nAcid = lista.filter(o => o.tipo === 'Acidente').length;
+  const nQuase = lista.filter(o => o.tipo === 'Quase Acidente').length;
+  const linhas = lista.map(o => {
+    const pessoas = o.responsaveis.length
+      ? o.responsaveis.map(n => '<span class="rc-pessoa">' + esc(n) + '</span>').join('')
+      : '<span style="color:var(--ink-soft);">—</span>';
+    const sub = [o.empreendimento, o.ave ? 'ave: ' + o.ave : '', o.gravidade].filter(Boolean).map(esc).join(' · ');
+    let alerta = '';
+    try{ alerta = reconAlertaSstHtml_(o.base); }catch(e){}
+    return `
         <tr>
-          <td style="white-space:nowrap;">${dataBR(i.data)}</td>
-          <td>${selo(i.tipo)}</td>
-          <td>${esc(i.gravidade || '—')}</td>
-          <td>${esc(reconhecimentoNomeCanonico(i.responsavel) || '—')}</td>
-          <td>${esc(i.empreendimento || '—')}</td>
-          <td>${esc(i.ave || '—')}</td>
-          <td style="white-space:normal;min-width:220px;">${esc(i.descricao || '')}</td>
-          <td>${(function(){ try{ return reconAlertaSstHtml_(i); }catch(e){ return ''; } })()}</td>
-        </tr>`).join('');
+          <td style="white-space:nowrap;vertical-align:top;">${dataBR(o.data)}</td>
+          <td style="vertical-align:top;">${selo(o.tipo)}</td>
+          <td style="white-space:normal;min-width:240px;">
+            <div class="rc-sit">${esc(o.situacao || '—')}</div>
+            ${sub ? '<div class="rc-sub">' + sub + '</div>' : ''}
+          </td>
+          <td style="white-space:normal;min-width:160px;vertical-align:top;">${pessoas}</td>
+          <td style="vertical-align:top;">${alerta}</td>
+        </tr>`;
+  }).join('');
   return `
+    <style>
+      .rc-selo{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--gray-light);color:var(--ink-soft);white-space:nowrap;}
+      .rc-acid{background:var(--red-light);color:var(--red);}
+      .rc-quase{background:var(--amber-light);color:var(--amber);}
+      .rc-sit{font-size:12.5px;font-weight:600;line-height:1.35;}
+      .rc-sub{font-size:11px;color:var(--ink-soft);margin-top:3px;}
+      .rc-pessoa{display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:10px;font-size:11px;background:var(--panel);border:1px solid var(--line);white-space:nowrap;}
+    </style>
     <div class="logtable-wrap" style="margin-top:16px;">
-      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Acidentes e quase acidentes (${lista.length})</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Ocorrências (${lista.length}) · ${nAcid} acidente${nAcid===1?'':'s'} · ${nQuase} quase acidente${nQuase===1?'':'s'}</div>
       <table class="logtable">
-        <thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Colaborador</th><th>Empreendimento</th><th>Ave</th><th>Descrição</th><th>Alerta SST</th></tr></thead>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Situação</th><th>Responsáveis</th><th>Alerta SST</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>${pendSst}`;
